@@ -102,7 +102,7 @@ export function createMicrosoftProvider(deps: CalendarProviderDeps): CalendarPro
       const path = writeEventsPath(conn.calendarIdWrite, conn.id)
       // Graph's own idempotency key: a retried POST carrying the same
       // transactionId returns the original event instead of creating a twin.
-      const transactionId = `punctual-${deps.crypto.randomToken(12)}`
+      const transactionId = event.idempotencyKey ?? `punctual-${deps.crypto.randomToken(12)}`
 
       const res = await providerFetch(deps, conn, `${GRAPH}${path}`, {
         method: 'POST',

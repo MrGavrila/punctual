@@ -24,6 +24,7 @@ import {
   type CalendarProviderDeps,
   expectOk,
   isRecord,
+  needsReconnect,
   providerFetch,
   readJson,
 } from '../oauth.js'
@@ -32,6 +33,14 @@ const API = 'https://www.googleapis.com/calendar/v3'
 
 /** Google's documented ceiling for a single freeBusy query. */
 const MAX_CALENDARS_PER_QUERY = 50
+
+/** The write may have committed; never translate this into an automatic ICS fallback. */
+export class CalendarWriteUncertainError extends CalendarApiError {
+  constructor(message: string) {
+    super('google', message)
+    this.name = 'CalendarWriteUncertainError'
+  }
+}
 
 export function createGoogleProvider(deps: CalendarProviderDeps): CalendarProvider {
   return {
@@ -68,6 +77,7 @@ export function createGoogleProvider(deps: CalendarProviderDeps): CalendarProvid
 
     async createEvent(conn, event) {
       const calendarId = writeCalendar(conn.calendarIdWrite, conn.id)
+      const stableEventId = event.idempotencyKey ? googleEventId(event.idempotencyKey) : undefined
       // A fresh requestId per event: reusing one returns the SAME conference,
       // which would put unrelated guests into each other's meeting.
       const requestId = event.createConference ? `punctual-${deps.crypto.randomToken(12)}` : undefined
@@ -78,16 +88,40 @@ export function createGoogleProvider(deps: CalendarProviderDeps): CalendarProvid
       // too gives the guest two invitations that disagree about branding.
       url.searchParams.set('sendUpdates', 'none')
 
-      const res = await providerFetch(deps, conn, url.toString(), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(toGoogleEvent(event, requestId)),
-      })
-      const created = await readJson<unknown>(conn, res, 'events.insert')
+      let created: unknown
+      try {
+        const res = await providerFetch(deps, conn, url.toString(), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(toGoogleEvent(event, requestId, stableEventId)),
+        })
+        created = await readJson<unknown>(conn, res, 'events.insert')
+      } catch (insertError) {
+        if (!stableEventId || needsReconnect(insertError)) throw insertError
+        // A timeout can happen after Google commits the POST but before its
+        // response reaches us. Re-read the deterministic id before allowing a
+        // queue retry; otherwise an already-created event looks like failure.
+        let recovered: unknown
+        try {
+          recovered = await findGoogleEvent(deps, conn, calendarId, stableEventId)
+        } catch {
+          throw new CalendarWriteUncertainError('could not verify the outcome of events.insert')
+        }
+        if (recovered === null) {
+          if (insertError instanceof CalendarApiError && insertError.status === 409) {
+            throw new CalendarWriteUncertainError('events.insert reported a duplicate but its event could not be read')
+          }
+          throw insertError
+        }
+        created = recovered
+      }
       if (!isRecord(created) || typeof created['id'] !== 'string') {
         throw new CalendarApiError('google', 'events.insert returned no event id', {
           body: JSON.stringify(created).slice(0, 500),
         })
+      }
+      if (created['status'] === 'cancelled') {
+        throw new CalendarWriteUncertainError('event was deleted; manual calendar review required')
       }
       const direct = googleConferenceUrl(created)
       if (direct) return { id: created['id'], ...direct }
@@ -138,6 +172,12 @@ export function createGoogleProvider(deps: CalendarProviderDeps): CalendarProvid
       // must still be able to cancel the booking.
       if (res.status === 404 || res.status === 410) return
       await expectOk(conn, res, 'events.delete')
+    },
+
+    async deleteEventByBookingId(conn, bookingId) {
+      // DELETE is safe even when INSERT never committed. Do not POST to recover
+      // an id: that could create a meeting which has already been cancelled.
+      await this.deleteEvent(conn, googleEventId(bookingId))
     },
 
     async listCalendars(conn) {
@@ -285,12 +325,16 @@ async function resolveGoogleConference(
       const res = await providerFetch(deps, conn, url, { method: 'GET' })
       const body = await readJson<unknown>(conn, res, 'events.get')
       if (!isRecord(body)) return null
+      if (body['status'] === 'cancelled') {
+        throw new CalendarWriteUncertainError('event was deleted while provisioning its conference')
+      }
       const found = googleConferenceUrl(body)
       if (found) return found
       // A FAILED provisioning never resolves — stop rather than spend the
       // remaining attempts and the consumer's time budget on it.
       if (googleConferenceFailed(body)) return null
-    } catch {
+    } catch (err) {
+      if (err instanceof CalendarWriteUncertainError) throw err
       // The event itself was created; a read failing here costs the link,
       // not the booking.
       return null
@@ -327,7 +371,11 @@ export function googleConferenceUrl(created: Record<string, unknown>): { confere
   return null
 }
 
-export function toGoogleEvent(event: ExternalEvent, conferenceRequestId?: string): Record<string, unknown> {
+export function toGoogleEvent(
+  event: ExternalEvent,
+  conferenceRequestId?: string,
+  stableEventId?: string,
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     summary: event.title,
     description: event.description,
@@ -342,6 +390,8 @@ export function toGoogleEvent(event: ExternalEvent, conferenceRequestId?: string
     })),
   }
 
+  if (stableEventId !== undefined) body['id'] = stableEventId
+
   if (event.location !== undefined) body['location'] = event.location
 
   if (conferenceRequestId !== undefined) {
@@ -354,6 +404,30 @@ export function toGoogleEvent(event: ExternalEvent, conferenceRequestId?: string
   }
 
   return body
+}
+
+/** Return a deterministically-addressed event, or null only for a confirmed 404. */
+async function findGoogleEvent(
+  deps: CalendarProviderDeps,
+  conn: CalendarConnection,
+  calendarId: string,
+  eventId: string,
+): Promise<unknown | null> {
+  const url =
+    `${API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}` +
+    '?conferenceDataVersion=1'
+  const res = await providerFetch(deps, conn, url, { method: 'GET' })
+  if (res.status === 404) return null
+  return readJson<unknown>(conn, res, 'events.get after ambiguous insert')
+}
+
+/** Convert the booking UUID to Google's base32hex-compatible event id. */
+function googleEventId(idempotencyKey: string): string {
+  const compact = idempotencyKey.toLowerCase().replaceAll('-', '')
+  if (!/^[0-9a-v]{4,1023}$/.test(compact)) {
+    throw new CalendarApiError('google', 'idempotency key cannot be represented as a Google event id')
+  }
+  return `p${compact}`
 }
 
 // ---------------------------------------------------------------------------

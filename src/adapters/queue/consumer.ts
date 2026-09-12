@@ -11,24 +11,47 @@ import type { EnginePorts, ExternalEvent, QueueMessage, Repositories } from '../
 import type { Booking, CalendarConnection, EventType, User } from '../../core/domain/types.js'
 import { calendarDescription, calendarTitle, participantsFor, type Participant } from '../../core/domain/calendar-text.js'
 import { hostSettings } from '../../core/domain/hosts.js'
-import { needsReconnect } from '../oauth.js'
+import { CalendarApiError, needsReconnect } from '../oauth.js'
 import { notifyBookingCreated, notifyBookingRescheduled } from '../notify.js'
+
+// Attempts happen at t=0, 2m, 5m, 30m and 2h. Values are the delay from
+// each failed delivery to the next one, not absolute times from the booking.
+const CALENDAR_CREATE_RETRY_DELAYS_SECONDS = [120, 180, 1_500, 5_400] as const
+
+class RetryableCalendarSyncError extends Error {
+  constructor() {
+    super('calendar synchronization requires another attempt')
+    this.name = 'RetryableCalendarSyncError'
+  }
+}
+
+class ConfirmationBusyError extends Error {}
 
 export async function handleQueueBatch(batch: MessageBatch, ports: EnginePorts): Promise<void> {
   for (const message of batch.messages) {
     try {
-      await handleOne(message.body as QueueMessage, ports)
+      await handleOne(message.body as QueueMessage, ports, message.attempts)
       message.ack()
     } catch (err) {
       // Retry individually: one bad webhook endpoint must not hold up
       // everyone else's confirmation emails.
       console.error('[punctual] queue message failed', err)
-      message.retry()
+      const delaySeconds = err instanceof ConfirmationBusyError ? 300 :
+        err instanceof RetryableCalendarSyncError
+          ? CALENDAR_CREATE_RETRY_DELAYS_SECONDS[message.attempts - 1]
+          : undefined
+      if (delaySeconds === undefined) message.retry()
+      else message.retry({ delaySeconds })
     }
   }
 }
 
-export async function handleOne(msg: QueueMessage, ports: EnginePorts): Promise<void> {
+export async function handleOne(
+  msg: QueueMessage,
+  ports: EnginePorts,
+  // Zero means an inline/fallback call with no delayed queue available.
+  deliveryAttempt = 0,
+): Promise<void> {
   switch (msg.kind) {
     case 'email':
       await ports.email.send(msg.message)
@@ -39,7 +62,7 @@ export async function handleOne(msg: QueueMessage, ports: EnginePorts): Promise<
       return
 
     case 'calendar.sync':
-      await syncCalendar(msg, ports)
+      await syncCalendar(msg, ports, deliveryAttempt)
       return
   }
 }
@@ -103,9 +126,8 @@ async function hmacHex(secret: string, payload: string): Promise<string> {
  * provider is an attendee there instead; a host with no connection at all
  * is listed on the primary provider's event by address — which lands on
  * their calendar only if that address is an account there (Google sends
- * no email under sendUpdates=none), so it is a courtesy on top of the
- * host confirmation email that already carries the .ics, not the delivery
- * path. Optional hosts are flagged optional in the invite.
+ * no email under sendUpdates=none), so it is a courtesy rather than the
+ * delivery path. Optional hosts are flagged optional in the invite.
  *
  * Per-provider failure is tolerated: the organizer's expired Google token
  * must not stop the event landing in Outlook.
@@ -118,56 +140,41 @@ async function hmacHex(secret: string, payload: string): Promise<string> {
 async function syncCalendar(
   msg: Extract<QueueMessage, { kind: 'calendar.sync' }>,
   ports: EnginePorts,
+  deliveryAttempt: number,
 ): Promise<void> {
   const repos = ports.repositories({ consistency: 'bookmark' })
   const booking = await repos.bookings.byId(msg.bookingId)
   if (!booking) return
-  // A create that is still retrying when the booking gets cancelled must not
-  // land: the delete already ran against an empty id map, so nothing would ever
-  // remove it.
-  if (msg.action === 'create' && booking.status !== 'confirmed') return
+  // Never POST for an abandoned booking, including retries of ambiguous writes.
+  if (msg.action === 'delete' || booking.status !== 'confirmed') {
+    await removeCalendarEvents(booking, repos, ports)
+    return
+  }
   // Looked up here, not earlier: a DELETE needs only externalEventIds, and
   // bailing on a missing event type meant deleting an event type stranded its
   // bookings' calendar entries forever.
   const eventType = await repos.eventTypes.byId(booking.eventTypeId)
-  if (!eventType && msg.action !== 'delete') return
+  if (!eventType) return
   // Accumulated across every provider, then persisted once.
   const createdIds: Record<string, string> = { ...booking.externalEventIds }
 
-  // ---- delete: the stored events, whatever shape they were written in ----
-  if (msg.action === 'delete') {
-    for (const [connId, externalId] of Object.entries(booking.externalEventIds)) {
-      const conn = await repos.connections.byId(connId)
-      if (!conn) {
-        // The connection is gone; so is our way to reach the event. Drop the
-        // id rather than retry forever against nothing.
-        delete createdIds[connId]
-        continue
-      }
-      try {
-        await ports.calendars.get(conn.provider).deleteEvent(conn, externalId)
-        // Only drop the id once the provider confirms. Clearing the whole
-        // map unconditionally meant one host's expired token discarded
-        // another host's id too, leaving that event on a real calendar
-        // with nothing left to delete it by.
-        delete createdIds[connId]
-      } catch (err) {
-        console.error(`[punctual] calendar delete failed for connection ${connId}`, err)
-        if (needsReconnect(err)) {
-          await repos.connections.updateSyncStatus(conn.id, 'needs_reconnect').catch(() => {})
-        }
-      }
-    }
-    // Persist what actually got deleted, not an empty map. A per-connection
-    // failure is caught and logged above, so an unconditional wipe would
-    // orphan that event permanently.
-    const changed = JSON.stringify(createdIds) !== JSON.stringify(booking.externalEventIds)
-    if (changed) await repos.bookings.setExternalEventIds(booking.id, createdIds)
-    return
-  }
-  if (!eventType) return
-
   const plan = await planInvites(repos, booking, eventType)
+  const priorTargets = await repos.bookings.calendarTargets(booking.id)
+  let unavailableTarget = false
+  // A settings change must not move a retry to a different calendar and leave
+  // the original, possibly committed write behind.
+  const savedEvents: typeof plan.events = []
+  for (const target of priorTargets) {
+    const conn = await repos.connections.byId(target.connectionId)
+    if (!conn) { unavailableTarget = true; continue }
+    const attendees = plan.events.find((e) => e.conn.provider === conn.provider)?.attendees
+      ?? await legacyAttendees(repos, booking, conn)
+    savedEvents.push({ conn: { ...conn, calendarIdWrite: target.calendarId }, attendees })
+  }
+  const targets = [
+    ...savedEvents,
+    ...plan.events.filter((e) => !unavailableTarget && !savedEvents.some((s) => s.conn.provider === e.conn.provider)),
+  ]
 
   // The first conference link any provider minted. One per booking, not per
   // event: it is the link the GUEST is told to join, and a guest has one
@@ -185,26 +192,35 @@ async function syncCalendar(
   // for a delete sync to run against a still-empty id map, delete nothing,
   // and leave a real calendar event nothing can ever remove.
   const freshlyCreated: Array<{ conn: CalendarConnection; externalId: string }> = []
+  let retryableCreateFailure = unavailableTarget
 
   // One title and one description for every copy of this meeting, naming
   // the people and their companies (core/domain/calendar-text.ts).
   const title = calendarTitle(eventType, plan.participants)
   const description = calendarDescription(eventType, booking, plan.participants)
-  const externalFor = (conn: CalendarConnection, attendees: ExternalEvent['attendees']): ExternalEvent => ({
-    title,
-    description,
-    start: booking.startUtc,
-    end: booking.endUtc,
-    attendees,
-    timezone: plan.organizerTz.get(conn.id) ?? booking.guestTimezone,
-    // Mint a conference only until ONE exists for this booking; every later
-    // event reuses it as the location instead.
-    createConference: eventType.locationType === 'google_meet' && !conferenceRequested,
-    location:
-      eventType.locationType === 'in_person'
-        ? (eventType.locationValue ?? undefined)
-        : (conferenceUrl ?? undefined),
-  })
+  const externalFor = (conn: CalendarConnection, attendees: ExternalEvent['attendees']): ExternalEvent => {
+    // The connection's account owns the provider event already. Listing that
+    // same address as an attendee makes Google propagate a second copy to the
+    // account's primary calendar when the organizer calendar is secondary.
+    const ownerEmail = conn.providerAccountEmail.trim().toLowerCase()
+    const providerAttendees = attendees.filter((attendee) => attendee.email.trim().toLowerCase() !== ownerEmail)
+    return {
+      title,
+      description,
+      start: booking.startUtc,
+      end: booking.endUtc,
+      idempotencyKey: booking.id,
+      attendees: providerAttendees,
+      timezone: plan.organizerTz.get(conn.id) ?? booking.guestTimezone,
+      // Mint a conference only until ONE exists for this booking; every later
+      // event reuses it as the location instead.
+      createConference: eventType.locationType === 'google_meet' && !conferenceRequested,
+      location:
+        eventType.locationType === 'in_person'
+          ? (eventType.locationValue ?? undefined)
+          : (conferenceUrl ?? undefined),
+    }
+  }
 
   /**
    * Create the events a plan calls for that do not exist yet, keeping their
@@ -221,6 +237,15 @@ async function syncCalendar(
       // overwrites the first id, leaving it unreachable by every delete
       // path — a permanent phantom on the host's calendar.
       if (booking.externalEventIds[conn.id]) continue
+      // A sixth queue delivery can be an EMAIL retry after the fifth calendar
+      // attempt. It must not silently restart the exhausted calendar schedule.
+      if (msg.action === 'create' && deliveryAttempt > 5) {
+        retryableCreateFailure = true
+        continue
+      }
+      // If persistence fails, do not call the provider: cancellation needs
+      // this intent even when POST commits but its response disappears.
+      await repos.bookings.rememberCalendarTarget(booking.id, conn.id, conn.calendarIdWrite!)
       try {
         const external = externalFor(conn, attendees)
         if (external.createConference === true) conferenceRequested = true
@@ -239,6 +264,10 @@ async function syncCalendar(
         if (needsReconnect(err)) {
           await repos.connections.updateSyncStatus(conn.id, 'needs_reconnect').catch(() => {})
         }
+        if (isRetryableCalendarError(err)) retryableCreateFailure = true
+        else if (!priorTargets.some((t) => t.connectionId === conn.id && t.uncertain)) {
+          await repos.bookings.rejectCalendarTarget(booking.id, conn.id)
+        }
       }
     }
   }
@@ -253,14 +282,10 @@ async function syncCalendar(
   const abandonedIfCancelled = async (): Promise<boolean> => {
     const current = await repos.bookings.byId(booking.id)
     if (!current || current.status === 'confirmed') return false
-    for (const made of freshlyCreated) {
-      await ports.calendars
-        .get(made.conn.provider)
-        .deleteEvent(made.conn, made.externalId)
-        .catch((err) =>
-          console.error(`[punctual] could not remove event for cancelled booking ${booking.id}`, err),
-        )
-    }
+    // Keep discovered ids BEFORE deletion. A failing DELETE must retain a
+    // recoverable task rather than ACK a stranded event.
+    await repos.bookings.setExternalEventIds(booking.id, createdIds)
+    await removeCalendarEvents({ ...current, externalEventIds: createdIds }, repos, ports)
     return true
   }
 
@@ -308,7 +333,7 @@ async function syncCalendar(
       }
     }
 
-    await createMissing(plan.events.filter((t) => !anchor.has(t.conn.provider)))
+    await createMissing(targets.filter((t) => !anchor.has(t.conn.provider)))
     if (freshlyCreated.length === 0) return
     if (await abandonedIfCancelled()) return
     await repos.bookings.setSyncResult(booking.id, createdIds, conferenceUrl)
@@ -316,7 +341,7 @@ async function syncCalendar(
   }
 
   // ---- create: one event per provider ----
-  await createMissing(plan.events)
+  await createMissing(targets)
   // Persist whatever succeeded. Partial success is normal — one host's expired
   // token must not discard another host's event id.
   if (msg.action === 'create') {
@@ -330,22 +355,77 @@ async function syncCalendar(
       conferenceUrl !== booking.conferenceUrl
     if (changed) await repos.bookings.setSyncResult(booking.id, createdIds, conferenceUrl)
 
+    const retryDelaySeconds = CALENDAR_CREATE_RETRY_DELAYS_SECONDS[deliveryAttempt - 1]
+    if (
+      retryableCreateFailure &&
+      retryDelaySeconds !== undefined &&
+      ports.clock.now() + retryDelaySeconds * 1_000 < booking.startUtc
+    ) {
+      throw new RetryableCalendarSyncError()
+    }
+
     // The confirmation is dispatched HERE, not by the coordinator, because
     // this is the first point that knows the conference link — and the email
     // body is rendered at enqueue time, so sending it any earlier bakes in a
     // "link to follow" that never gets followed up.
     //
-    // Reached unconditionally: every per-connection failure above is caught
-    // and `continue`d, and a host with no writable connection simply runs an
-    // empty loop. So a calendar outage delays nothing here — it only means
-    // the email goes out without a link, which is the honest outcome and the
-    // same one guests got before this change.
+    // Reached after a successful write, a permanent rejection, or the bounded
+    // retry schedule. Transient failures delay confirmation until the next
+    // 2m/5m/30m/2h checkpoint; after the last attempt the host gets an explicit
+    // warning without a duplicate-prone .ics because the remote outcome is
+    // still uncertain.
     // Throws on failure so `handleQueueBatch` retries rather than acking —
     // the calendar work above is idempotent (guarded by `externalEventIds`),
     // so redelivery is safe. Releasing the claim is `dispatchConfirmation`'s
     // job, because only it knows whether THIS attempt won one.
-    await dispatchConfirmation(booking.id, ports, msg.manageToken)
+    const pendingTargets = await repos.bookings.calendarTargets(booking.id)
+    const uncertain = retryableCreateFailure || pendingTargets.some((t) => t.uncertain && !createdIds[t.connectionId])
+    await dispatchConfirmation(booking.id, ports, msg.manageToken, uncertain)
   }
+}
+
+/** Delete known and possibly committed events; retain failed work for redelivery/DLQ. */
+async function removeCalendarEvents(booking: Booking, repos: Repositories, ports: EnginePorts): Promise<void> {
+  const targets = await repos.bookings.calendarTargets(booking.id)
+  const ids = { ...booking.externalEventIds }
+  const connections = new Set([...Object.keys(ids), ...targets.map((t) => t.connectionId)])
+  let failed = false
+  for (const connectionId of connections) {
+    const target = targets.find((t) => t.connectionId === connectionId)
+    try {
+      if (ids[connectionId] || target?.uncertain) {
+        const live = await repos.connections.byId(connectionId)
+        if (!live) throw new Error(`calendar connection ${connectionId} is unavailable for cleanup`)
+        const conn = target ? { ...live, calendarIdWrite: target.calendarId } : live
+        const provider = ports.calendars.get(conn.provider)
+        if (ids[connectionId]) {
+          await provider.deleteEvent(conn, ids[connectionId]!)
+          await repos.bookings.rejectCalendarTarget(booking.id, connectionId)
+        }
+        else if (provider.deleteEventByBookingId) await provider.deleteEventByBookingId(conn, booking.id)
+        else throw new Error(`provider ${conn.provider} needs manual cleanup of ambiguous booking ${booking.id}`)
+      }
+      delete ids[connectionId]
+      await repos.bookings.setExternalEventIds(booking.id, ids)
+      // Keep the destination as a tombstone. A create may still be in flight
+      // while this deletion runs; forgetting its intent here would make a
+      // later lost-response cleanup blind. Known deletions are marked settled
+      // above; ambiguous Google targets can safely be deleted again.
+    } catch (err) {
+      failed = true
+      console.error(`[punctual] calendar cleanup failed for connection ${connectionId}`, err)
+      if (needsReconnect(err)) await repos.connections.updateSyncStatus(connectionId, 'needs_reconnect').catch(() => {})
+    }
+  }
+  if (failed) throw new RetryableCalendarSyncError()
+}
+
+function isRetryableCalendarError(err: unknown): boolean {
+  if (needsReconnect(err)) return false
+  if (!(err instanceof CalendarApiError)) return true
+  if (err.status === undefined) return true
+  if (err.status === 408 || err.status === 429 || err.status >= 500) return true
+  return err.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(err.body ?? '')
 }
 
 /**
@@ -431,8 +511,10 @@ async function legacyAttendees(
 }
 
 /**
- * Send this booking's confirmation, exactly once, now that the conference
- * link is known.
+ * Queue this booking's confirmation after calendar sync. Durable recipient
+ * checkpoints avoid resending a successfully enqueued sibling on retry.
+ * Queue acceptance and D1 checkpointing are not a distributed transaction:
+ * an acknowledgement lost in that narrow window can still duplicate email.
  *
  * Ownership of this moved out of the coordinator: the coordinator
  * fires immediately after commit, which is BEFORE any calendar event exists,
@@ -457,6 +539,9 @@ export async function dispatchConfirmation(
   bookingId: string,
   ports: EnginePorts,
   manageToken: string | undefined,
+  // A route fallback after a failed enqueue cannot prove the queue rejected
+  // the sync. Only syncCalendar supplies a definitive false explicitly.
+  calendarSyncUncertain = true,
 ): Promise<void> {
   const repos = ports.repositories({ consistency: 'bookmark' })
 
@@ -494,7 +579,15 @@ export async function dispatchConfirmation(
 
   // Claimed as late as possible, but still before sending: Queues is
   // at-least-once, so a redelivery must not send a second confirmation.
-  if (!(await repos.bookings.claimConfirmation(bookingId, ports.clock.now()))) return
+  const claimAt = ports.clock.now()
+  const claim = await repos.bookings.claimConfirmation(bookingId, claimAt)
+  if (claim === 'busy') throw new ConfirmationBusyError('confirmation dispatch is leased by another delivery')
+  if (!claim) return
+  const enqueueConfirmation = async (audience: 'guest' | 'host', message: QueueMessage) => {
+    if (await repos.bookings.confirmationRecipientQueued(bookingId, audience)) return
+    await ports.queue.send(message)
+    await repos.bookings.markConfirmationRecipientQueued(bookingId, audience, ports.clock.now())
+  }
 
   // Released ONLY on a claim this attempt won. Releasing from an outer catch
   // was wrong in a way that undoes the migration backfill: an attempt that
@@ -511,13 +604,26 @@ export async function dispatchConfirmation(
         eventType,
         host,
         hosts,
+        enqueueConfirmation,
         ...(manageToken ? { manageToken } : {}),
+        ...(calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
       })
+      await repos.bookings.completeConfirmation(bookingId, claimAt)
       return
     }
-    await notifyBookingCreated({ ports, booking, eventType, host, hosts, ...(manageToken ? { manageToken } : {}) })
+    await notifyBookingCreated({
+      ports,
+      booking,
+      eventType,
+      host,
+      hosts,
+      enqueueConfirmation,
+      ...(manageToken ? { manageToken } : {}),
+      ...(calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
+    })
+    await repos.bookings.completeConfirmation(bookingId, claimAt)
   } catch (err) {
-    await repos.bookings.releaseConfirmationClaim(bookingId).catch(() => {})
+    await repos.bookings.releaseConfirmationClaim(bookingId, claimAt).catch(() => {})
     throw err
   }
 }

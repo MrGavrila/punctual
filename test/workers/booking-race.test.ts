@@ -61,6 +61,58 @@ const repos = () => createD1Repositories(env.DB, { consistency: 'bookmark' })
 const START = Math.ceil((Date.now() + 7 * DAY) / 300_000) * 300_000
 const NOW = Date.now()
 
+describe('durable calendar and confirmation recovery', () => {
+  let bookingId: string
+  let counter = 0
+  beforeEach(async () => {
+    bookingId = `recovery_${++counter}`
+    const prepared = prepareBooking({
+      eventType: eventType(), hosts: [host('h1')], start: START + counter * DAY,
+      guestName: 'Recovery', guestEmail: 'recovery@example.com', guestTimezone: 'UTC',
+      answers: {}, now: NOW, bookingId, manageTokenHash: `test-${bookingId}`,
+    })
+    if (!prepared.ok) throw new Error('failed to prepare recovery fixture')
+    expect(await repos().bookings.createWithLocks(prepared.booking, [])).not.toBeNull()
+  })
+
+  it('retains each recipient checkpoint across repository instances and claim retries', async () => {
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW)).toBe(true)
+    await repos().bookings.markConfirmationRecipientQueued(bookingId, 'guest', NOW)
+    await repos().bookings.releaseConfirmationClaim(bookingId, NOW)
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 1)).toBe(true)
+    expect(await repos().bookings.confirmationRecipientQueued(bookingId, 'guest')).toBe(true)
+    expect(await repos().bookings.confirmationRecipientQueued(bookingId, 'host')).toBe(false)
+    await repos().bookings.markConfirmationRecipientQueued(bookingId, 'host', NOW + 1)
+    await repos().bookings.completeConfirmation(bookingId, NOW + 1)
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 600_000)).toBe(false)
+  })
+
+  it('recovers a crashed dispatch lease and ignores the expired owner releasing it', async () => {
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW)).toBe(true)
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 1)).toBe('busy')
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 300_000)).toBe(true)
+    await repos().bookings.releaseConfirmationClaim(bookingId, NOW)
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 300_001)).toBe('busy')
+  })
+
+  it('preserves completed historical confirmations without sending them again', async () => {
+    await env.DB.prepare('UPDATE bookings SET confirmation_queued_at = ? WHERE id = ?').bind(NOW, bookingId).run()
+    expect(await repos().bookings.claimConfirmation(bookingId, NOW + 600_000)).toBe(false)
+  })
+
+  it('persists the original target and uncertainty independently of event ids', async () => {
+    await repos().bookings.rememberCalendarTarget(bookingId, 'conn-recovery', 'original')
+    await repos().bookings.rejectCalendarTarget(bookingId, 'conn-recovery')
+    expect(await repos().bookings.calendarTargets(bookingId)).toEqual([
+      { connectionId: 'conn-recovery', calendarId: 'original', uncertain: false },
+    ])
+    await repos().bookings.rememberCalendarTarget(bookingId, 'conn-recovery', 'replacement')
+    expect(await repos().bookings.calendarTargets(bookingId)).toEqual([
+      { connectionId: 'conn-recovery', calendarId: 'original', uncertain: true },
+    ])
+  })
+})
+
 describe('slot_locks is the invariant', () => {
   beforeEach(async () => {
     await env.DB.batch([

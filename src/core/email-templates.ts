@@ -67,6 +67,10 @@ export interface BookingEmailContext {
    * still gets sent without one, and the copy must not claim otherwise.
    */
   hasAttachment?: boolean
+  /** The provider event is known to exist on the host's connected calendar. */
+  calendarSynced?: boolean
+  /** Provider write ended in an ambiguous transient failure, so no duplicate-prone host .ics was attached. */
+  calendarSyncUncertain?: boolean
 }
 
 // Brand palette. Inline hex rather than tokens: email has no cascade and no
@@ -437,16 +441,17 @@ export function bookingConfirmationForHost(ctx: BookingEmailContext): EmailConte
     brandName,
     preheader: `${ctx.booking.guestName} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'New booking',
-    // The same .ics that lands the guest's copy is attached here too — worth
-    // saying, since not every calendar is connected for auto-sync and a host
-    // whose client doesn't auto-detect the attachment needs to know it's there.
-    // Conditional on `hasAttachment`: a .ics that exceeded the size cap, or
-    // failed to generate, is dropped before the email is (notify.ts) — this
-    // copy must not claim an attachment that was never actually sent.
+    // The host gets the .ics only when no provider event reached one of their
+    // connected calendars. `hasAttachment` also covers generation failure and
+    // the size cap, so this copy never claims an attachment that was omitted.
     intro:
-      ctx.hasAttachment === false
+      ctx.calendarSynced === true
         ? `${ctx.booking.guestName} booked ${ctx.eventType.title}. It is already on your calendar.`
-        : `${ctx.booking.guestName} booked ${ctx.eventType.title}. It is already on your calendar — the invite is attached too, in case you need it elsewhere.`,
+        : ctx.calendarSyncUncertain === true
+          ? `${ctx.booking.guestName} booked ${ctx.eventType.title}, but we could not confirm whether it reached your connected calendar. Please check the calendar before adding it manually; no duplicate invite was attached.`
+        : ctx.hasAttachment === false
+          ? `${ctx.booking.guestName} booked ${ctx.eventType.title}, but it could not be added to your connected calendar automatically and the fallback invite could not be attached. Please add it manually from this email.`
+          : `${ctx.booking.guestName} booked ${ctx.eventType.title}, but it could not be added to your connected calendar automatically. The invite is attached so you can add it manually.`,
     rows: baseRows(ctx, 'host', tz),
     ctas: manageCtas(ctx, 'host'),
     notes: [tzNote(tz, ctx.booking.startUtc)],
@@ -490,9 +495,13 @@ export function bookingRescheduled(ctx: RescheduleEmailContext): EmailContent {
         ? ctx.hasAttachment === false
           ? `Your meeting with ${who} has a new time.`
           : `Your meeting with ${who} has a new time. The updated invite is attached and replaces the old one — no need to delete anything.`
-        : ctx.hasAttachment === false
+        : ctx.calendarSynced === true
           ? `${who} rescheduled. Your calendar has been updated automatically.`
-          : `${who} rescheduled. Your calendar has been updated automatically, and the updated invite is attached too.`,
+          : ctx.calendarSyncUncertain === true
+            ? `${who} rescheduled, but we could not confirm whether the update reached your connected calendar. Please check the calendar before changing it manually; no duplicate invite was attached.`
+          : ctx.hasAttachment === false
+            ? `${who} rescheduled, but your connected calendar could not be updated automatically and the fallback invite could not be attached. Please update it manually from this email.`
+            : `${who} rescheduled, but your connected calendar could not be updated automatically. The updated invite is attached so you can replace it manually.`,
     rows,
     ctas: manageCtas(ctx, ctx.audience),
     notes: [

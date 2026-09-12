@@ -80,6 +80,9 @@ export function createFakeRepositories(): FakeRepositories {
   const bookings = new Map<string, Booking>()
   /** Booking id → when its confirmation was claimed; see `claimConfirmation`. */
   const confirmationClaims = new Map<string, number>()
+  const completedConfirmations = new Set<string>()
+  const confirmationRecipients = new Set<string>()
+  const calendarTargets = new Map<string, { bookingId: string; connectionId: string; calendarId: string; uncertain: boolean }>()
   const teams = new Map<string, Team>()
   const connections = new Map<string, CalendarConnection>()
   /** Keyed by schedule id, not userId — a host can have more than one. */
@@ -282,12 +285,36 @@ export function createFakeRepositories(): FakeRepositories {
       // first caller wins, every later one is refused.
       const existing = bookings.get(bookingId)
       if (!existing || existing.status !== 'confirmed') return false
-      if (confirmationClaims.has(bookingId)) return false
+      if (completedConfirmations.has(bookingId)) return false
+      if ((confirmationClaims.get(bookingId) ?? -Infinity) > at - 300_000) return 'busy' as const
       confirmationClaims.set(bookingId, at)
       return true
     },
-    async releaseConfirmationClaim(bookingId: string) {
-      confirmationClaims.delete(bookingId)
+    async releaseConfirmationClaim(bookingId: string, claimAt: number) {
+      if (confirmationClaims.get(bookingId) === claimAt) confirmationClaims.delete(bookingId)
+    },
+    async completeConfirmation(bookingId: string, claimAt: number) {
+      if (confirmationClaims.get(bookingId) === claimAt) {
+        completedConfirmations.add(bookingId)
+        confirmationClaims.delete(bookingId)
+      }
+    },
+    async confirmationRecipientQueued(bookingId: string, audience: string) {
+      return confirmationRecipients.has(`${bookingId}:${audience}`)
+    },
+    async markConfirmationRecipientQueued(bookingId: string, audience: string) {
+      confirmationRecipients.add(`${bookingId}:${audience}`)
+    },
+    async calendarTargets(bookingId: string) {
+      return [...calendarTargets.values()].filter((t) => t.bookingId === bookingId).map((t) => ({ ...t }))
+    },
+    async rememberCalendarTarget(bookingId: string, connectionId: string, calendarId: string) {
+      const key = `${bookingId}:${connectionId}`
+      calendarTargets.set(key, { bookingId, connectionId, calendarId: calendarTargets.get(key)?.calendarId ?? calendarId, uncertain: true })
+    },
+    async rejectCalendarTarget(bookingId: string, connectionId: string) {
+      const target = calendarTargets.get(`${bookingId}:${connectionId}`)
+      if (target) target.uncertain = false
     },
     async rotateManageToken(bookingId: string, tokenHash: string) {
       const existing = bookings.get(bookingId)

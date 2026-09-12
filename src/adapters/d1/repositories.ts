@@ -840,16 +840,52 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
       // between that read and this write would otherwise send a "meeting
       // confirmed" email for a booking that no longer exists.
       const res = await q(
-        `UPDATE bookings SET confirmation_queued_at = ?
-         WHERE id = ? AND confirmation_queued_at IS NULL AND status = 'confirmed'`,
+        `UPDATE bookings SET confirmation_claimed_at = ?
+         WHERE id = ? AND confirmation_queued_at IS NULL AND status = 'confirmed'
+         AND (confirmation_claimed_at IS NULL OR confirmation_claimed_at <= ?)`,
         at,
         bookingId,
+        at - 300_000,
       ).run()
-      return (res.meta.changes ?? 0) > 0
+      if ((res.meta.changes ?? 0) > 0) return true
+      const pending = await first<{ id: string }>(
+        `SELECT id FROM bookings WHERE id = ? AND status = 'confirmed' AND confirmation_queued_at IS NULL`,
+        bookingId,
+      )
+      return pending ? 'busy' : false
     },
 
-    async releaseConfirmationClaim(bookingId) {
-      await run('UPDATE bookings SET confirmation_queued_at = NULL WHERE id = ?', bookingId)
+    async releaseConfirmationClaim(bookingId, claimAt) {
+      await run('UPDATE bookings SET confirmation_claimed_at = NULL WHERE id = ? AND confirmation_claimed_at = ?', bookingId, claimAt)
+    },
+
+    async completeConfirmation(bookingId, claimAt) {
+      await run(`UPDATE bookings SET confirmation_queued_at = ?, confirmation_claimed_at = NULL
+        WHERE id = ? AND confirmation_claimed_at = ?`, claimAt, bookingId, claimAt)
+    },
+
+    async confirmationRecipientQueued(bookingId, audience) {
+      return (await first('SELECT 1 FROM booking_confirmation_recipients WHERE booking_id = ? AND audience = ?', bookingId, audience)) !== null
+    },
+
+    async markConfirmationRecipientQueued(bookingId, audience, at) {
+      await run('INSERT OR IGNORE INTO booking_confirmation_recipients (booking_id, audience, queued_at) VALUES (?, ?, ?)', bookingId, audience, at)
+    },
+
+    async rememberCalendarTarget(bookingId, connectionId, calendarId) {
+      await run(`INSERT INTO booking_calendar_targets (booking_id, connection_id, calendar_id) VALUES (?, ?, ?)
+        ON CONFLICT (booking_id, connection_id) DO UPDATE SET uncertain = 1`, bookingId, connectionId, calendarId)
+    },
+
+    async calendarTargets(bookingId) {
+      const rows = await all<{ connection_id: string; calendar_id: string; uncertain: number }>(
+        'SELECT connection_id, calendar_id, uncertain FROM booking_calendar_targets WHERE booking_id = ?', bookingId,
+      )
+      return rows.map((r) => ({ connectionId: r.connection_id, calendarId: r.calendar_id, uncertain: r.uncertain === 1 }))
+    },
+
+    async rejectCalendarTarget(bookingId, connectionId) {
+      await run('UPDATE booking_calendar_targets SET uncertain = 0 WHERE booking_id = ? AND connection_id = ?', bookingId, connectionId)
     },
 
     async rotateManageToken(bookingId, tokenHash) {

@@ -25,6 +25,28 @@ const HOUR = 3_600_000
 const DAY = 86_400_000
 const TZ = 'Europe/Kyiv'
 
+describe('ambiguous Google writes', () => {
+  const event = { title: 'Test', description: '', start: 0, end: 60_000, timezone: 'UTC', attendees: [], idempotencyKey: 'abc12345' }
+
+  it('does not replace an uncertain insert with a permanent lookup failure', async () => {
+    const { fetchImpl } = scriptGoogle([
+      [/\/events\?/, () => { throw new Error('response lost') }],
+      [/\/events\/pabc12345/, () => ({ status: 403, json: { error: 'forbidden' } })],
+    ])
+    await expect(createGoogleProvider(deps(fetchImpl)).createEvent(connection(), event))
+      .rejects.toMatchObject({ name: 'CalendarWriteUncertainError' })
+  })
+
+  it('does not report a cancelled tombstone as an active event', async () => {
+    const { fetchImpl } = scriptGoogle([
+      [/\/events\?/, () => ({ status: 409, json: { error: 'duplicate' } })],
+      [/\/events\/pabc12345/, () => ({ json: { id: 'pabc12345', status: 'cancelled' } })],
+    ])
+    await expect(createGoogleProvider(deps(fetchImpl)).createEvent(connection(), event))
+      .rejects.toMatchObject({ name: 'CalendarWriteUncertainError' })
+  })
+})
+
 interface Call {
   url: string
   method: string
@@ -290,6 +312,74 @@ describe('creating the event on the host calendar', () => {
     expect(new Date(body.start.dateTime).getTime()).toBe(start)
     expect(body.attendees.map((a) => a.email)).toContain('guest@example.com')
     expect(body.conferenceData?.createRequest?.requestId).toBeTruthy()
+  })
+
+  it('uses the booking id as a stable Google event id', async () => {
+    const { fetchImpl, calls } = scriptGoogle([
+      [/events\?|events$/, () => ({ json: { id: 'p550e8400e29b41d4a716446655440000' } })],
+    ])
+    const provider = createGoogleProvider(deps(fetchImpl) as never)
+    const start = localTimeToInstant('2026-06-15', 10 * 60, TZ)
+
+    await provider.createEvent(connection(), {
+      title: 'Reliable booking',
+      description: '',
+      start,
+      end: start + 30 * 60_000,
+      attendees: [{ email: 'guest@example.com' }],
+      timezone: TZ,
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+    })
+
+    expect((calls[0]!.body as { id?: string }).id).toBe('p550e8400e29b41d4a716446655440000')
+  })
+
+  it('recovers the created event when the insert response is lost', async () => {
+    const stableId = 'p550e8400e29b41d4a716446655440000'
+    const { fetchImpl, calls } = scriptGoogle([
+      [/\/events\?/, () => { throw new TypeError('connection reset after upload') }],
+      [
+        new RegExp(`/events/${stableId}`),
+        () => ({ json: { id: stableId, hangoutLink: 'https://meet.google.com/recovered' } }),
+      ],
+    ])
+    const provider = createGoogleProvider(deps(fetchImpl) as never)
+    const start = localTimeToInstant('2026-06-15', 10 * 60, TZ)
+
+    const created = await provider.createEvent(connection(), {
+      title: 'Reliable booking',
+      description: '',
+      start,
+      end: start + 30 * 60_000,
+      attendees: [{ email: 'guest@example.com' }],
+      timezone: TZ,
+      createConference: true,
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+    })
+
+    expect(created).toEqual({ id: stableId, conferenceUrl: 'https://meet.google.com/recovered' })
+    expect(calls.map((call) => call.method)).toEqual(['POST', 'GET'])
+  })
+
+  it('does not send the create-only stable id when updating an event', async () => {
+    const { fetchImpl, calls } = scriptGoogle([
+      [/\/events\/evt_existing/, () => ({ json: {} })],
+    ])
+    const provider = createGoogleProvider(deps(fetchImpl) as never)
+    const start = localTimeToInstant('2026-06-15', 10 * 60, TZ)
+
+    await provider.updateEvent(connection(), 'evt_existing', {
+      title: 'Moved booking',
+      description: '',
+      start,
+      end: start + 30 * 60_000,
+      attendees: [{ email: 'guest@example.com' }],
+      timezone: TZ,
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+    })
+
+    expect(calls[0]!.method).toBe('PATCH')
+    expect(calls[0]!.body).not.toHaveProperty('id')
   })
 
   it('does not request a conference when the event type does not want one', async () => {

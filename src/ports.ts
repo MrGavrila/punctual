@@ -326,8 +326,16 @@ export interface BookingRepository {
    * still the right write for a delete, which has no link to record.
    */
   setSyncResult(bookingId: string, ids: Record<string, string>, conferenceUrl: string | null): Promise<void>
+  /** Persist the destination BEFORE calling the provider, including ambiguous writes. */
+  rememberCalendarTarget(bookingId: string, connectionId: string, calendarId: string): Promise<void>
+  calendarTargets(bookingId: string): Promise<Array<{ connectionId: string; calendarId: string; uncertain: boolean }>>
+  rejectCalendarTarget(bookingId: string, connectionId: string): Promise<void>
+  confirmationRecipientQueued(bookingId: string, audience: 'guest' | 'host'): Promise<boolean>
+  markConfirmationRecipientQueued(bookingId: string, audience: 'guest' | 'host', at: number): Promise<void>
+  completeConfirmation(bookingId: string, claimAt: number): Promise<void>
   /**
-   * Claim the right to send this booking's confirmation, exactly once.
+   * Acquire a five-minute confirmation dispatch lease. Completed historical
+   * confirmations remain completed. Return 'busy' for an unexpired lease.
    *
    * Returns true to the single caller that won. The calendar-sync handler is
    * what dispatches confirmations now (it is the first point that knows the
@@ -336,13 +344,13 @@ export interface BookingRepository {
    * confirmation. Same discipline as `demoteAdmin`: the condition lives
    * inside the UPDATE, not in a read the caller does first.
    */
-  claimConfirmation(bookingId: string, at: number): Promise<boolean>
+  claimConfirmation(bookingId: string, at: number): Promise<boolean | 'busy'>
   /**
    * Undo a claim whose send then failed, so a queue retry can re-send.
    * Without it, claim-before-send turns any failure after the claim into a
    * permanently missing confirmation that the record calls sent.
    */
-  releaseConfirmationClaim(bookingId: string): Promise<void>
+  releaseConfirmationClaim(bookingId: string, claimAt: number): Promise<void>
 }
 
 export type BookingListView = 'upcoming' | 'past' | 'cancelled'
@@ -529,6 +537,8 @@ export interface CalendarProvider {
   createEvent(conn: CalendarConnection, event: ExternalEvent): Promise<CreatedEvent>
   updateEvent(conn: CalendarConnection, externalId: string, event: ExternalEvent): Promise<void>
   deleteEvent(conn: CalendarConnection, externalId: string): Promise<void>
+  /** Remove a possibly committed write without creating it. Optional provider capability. */
+  deleteEventByBookingId?(conn: CalendarConnection, bookingId: string): Promise<void>
   listCalendars(conn: CalendarConnection): Promise<Array<{ id: string; name: string; primary: boolean }>>
 }
 
@@ -552,6 +562,8 @@ export interface ExternalEvent {
   description: string
   start: number
   end: number
+  /** Stable booking UUID used by providers to make create retries idempotent. */
+  idempotencyKey?: string
   /** `optional` marks a host who joins when free (Google `optional`, Graph `type: optional`). */
   attendees: Array<{ email: string; name?: string; optional?: boolean }>
   location?: string

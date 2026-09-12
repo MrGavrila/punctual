@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { Booking, EventType, User } from '../../src/core/domain/types.js'
-import { notifyBookingCancelled } from '../../src/adapters/notify.js'
+import type { Booking, CalendarConnection, EventType, User } from '../../src/core/domain/types.js'
+import {
+  notifyBookingCancelled,
+  notifyBookingCreated,
+  notifyBookingRescheduled,
+} from '../../src/adapters/notify.js'
 import type { EnginePorts, QueueMessage } from '../../src/ports.js'
 
 /**
@@ -83,13 +87,37 @@ function booking(patch: Partial<Booking> = {}): Booking {
   }
 }
 
-/** Only what `notifyBookingCancelled` actually touches. */
-function fakePorts(sent: QueueMessage[]): EnginePorts {
+/** Only what the notification functions actually touch. */
+function fakePorts(
+  sent: QueueMessage[],
+  options: {
+    bookings?: Record<string, Booking>
+    connectionOwners?: Record<string, string>
+  } = {},
+): EnginePorts {
   return {
     repositories: () =>
       ({
         webhooks: { listForUser: async () => [] },
-        bookings: { byId: async () => null },
+        bookings: { byId: async (id: string) => options.bookings?.[id] ?? null },
+        connections: {
+          byId: async (id: string) => {
+            const userId = options.connectionOwners?.[id]
+            if (!userId) return null
+            return {
+              id,
+              userId,
+              provider: 'google',
+              providerAccountEmail: host.email,
+              encryptedTokens: 'encrypted-test-token',
+              keyVersion: 1,
+              calendarIdsRead: ['primary'],
+              calendarIdWrite: 'primary',
+              syncStatus: 'ok',
+              createdAt: 0,
+            } satisfies CalendarConnection
+          },
+        },
       }) as unknown as ReturnType<EnginePorts['repositories']>,
     queue: {
       send: async (message: QueueMessage) => {
@@ -108,6 +136,15 @@ function fakePorts(sent: QueueMessage[]): EnginePorts {
       telemetryEnabled: false,
     },
   } as unknown as EnginePorts
+}
+
+function emailTo(sent: QueueMessage[], recipient: string): Extract<QueueMessage, { kind: 'email' }> {
+  const email = sent.find(
+    (message): message is Extract<QueueMessage, { kind: 'email' }> =>
+      message.kind === 'email' && message.message.to === recipient,
+  )
+  if (!email) throw new Error(`No email queued for ${recipient}`)
+  return email
 }
 
 function emailAttachments(sent: QueueMessage[]): Array<
@@ -162,5 +199,147 @@ describe('notifyBookingCancelled — CANCEL suppressed for a superseded leg', ()
       expect(a).toBeDefined()
       expect(a?.[0]?.contentType).toContain('method=CANCEL')
     }
+  })
+})
+
+describe('booking notifications — host calendar attachment fallback', () => {
+  it('keeps the REQUEST for the guest but omits it from a host whose calendar event synced', async () => {
+    const sent: QueueMessage[] = []
+    const synced = booking({ externalEventIds: { conn_google: 'google_event_1' } })
+
+    await notifyBookingCreated({
+      ports: fakePorts(sent, { connectionOwners: { conn_google: host.id } }),
+      booking: synced,
+      eventType: eventType(),
+      host,
+    })
+
+    expect(emailTo(sent, synced.guestEmail).message.attachments?.[0]?.contentType).toContain('method=REQUEST')
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.attachments).toBeUndefined()
+    expect(hostEmail.text).toContain('It is already on your calendar.')
+    expect(hostEmail.text).not.toContain('the invite is attached')
+  })
+
+  it('does not warn the host when their event synced but another provider remained uncertain', async () => {
+    const sent: QueueMessage[] = []
+    const partiallySynced = booking({ externalEventIds: { conn_google: 'google_event_1' } })
+
+    await notifyBookingCreated({
+      ports: fakePorts(sent, { connectionOwners: { conn_google: host.id } }),
+      booking: partiallySynced,
+      eventType: eventType(),
+      host,
+      calendarSyncUncertain: true,
+    })
+
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.text).toContain('It is already on your calendar.')
+    expect(hostEmail.text).not.toContain('could not confirm whether it reached')
+  })
+
+  it('keeps the updated REQUEST for the guest but omits it from a synced host on reschedule', async () => {
+    const sent: QueueMessage[] = []
+    const previous = booking({ id: 'bk_previous', status: 'rescheduled', rescheduledTo: 'bk_1' })
+    const moved = booking({
+      rescheduleOf: previous.id,
+      startUtc: START + 24 * 60 * 60_000,
+      endUtc: START + 24 * 60 * 60_000 + 30 * 60_000,
+      externalEventIds: { conn_google: 'google_event_2' },
+    })
+
+    await notifyBookingRescheduled({
+      ports: fakePorts(sent, {
+        bookings: { [previous.id]: previous },
+        connectionOwners: { conn_google: host.id },
+      }),
+      booking: moved,
+      previous,
+      eventType: eventType(),
+      host,
+    })
+
+    expect(emailTo(sent, moved.guestEmail).message.attachments?.[0]?.contentType).toContain('method=REQUEST')
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.attachments).toBeUndefined()
+    expect(hostEmail.text).toContain('Your calendar has been updated automatically.')
+    expect(hostEmail.text).not.toContain('the updated invite is attached')
+  })
+
+  it('keeps the CANCEL for the guest but omits it from a host whose calendar event synced', async () => {
+    const sent: QueueMessage[] = []
+    const cancelled = booking({
+      status: 'cancelled',
+      cancelledAt: START,
+      externalEventIds: { conn_google: 'google_event_3' },
+    })
+
+    await notifyBookingCancelled({
+      ports: fakePorts(sent, { connectionOwners: { conn_google: host.id } }),
+      booking: cancelled,
+      eventType: eventType(),
+      host,
+      cancelledBy: 'guest',
+    })
+
+    expect(emailTo(sent, cancelled.guestEmail).message.attachments?.[0]?.contentType).toContain('method=CANCEL')
+    expect(emailTo(sent, host.email).message.attachments).toBeUndefined()
+  })
+
+  it('keeps the host REQUEST as a fallback when no host calendar event synced', async () => {
+    const sent: QueueMessage[] = []
+    const unsynced = booking({ externalEventIds: {} })
+
+    await notifyBookingCreated({
+      ports: fakePorts(sent),
+      booking: unsynced,
+      eventType: eventType(),
+      host,
+    })
+
+    expect(emailTo(sent, unsynced.guestEmail).message.attachments?.[0]?.contentType).toContain('method=REQUEST')
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.attachments?.[0]?.contentType).toContain('method=REQUEST')
+    expect(hostEmail.text).toContain('could not be added to your connected calendar automatically')
+  })
+
+  it('does not claim an unsynced event is already on the calendar when the fallback is too large', async () => {
+    const sent: QueueMessage[] = []
+    const unsynced = booking({ externalEventIds: {} })
+
+    await notifyBookingCreated({
+      ports: fakePorts(sent),
+      booking: unsynced,
+      eventType: eventType({ description: 'x'.repeat(40_000) }),
+      host,
+    })
+
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.attachments).toBeUndefined()
+    expect(hostEmail.text).toContain('fallback invite could not be attached')
+    expect(hostEmail.text).not.toContain('already on your calendar')
+  })
+
+  it('explains the attachment fallback when a reschedule did not sync', async () => {
+    const sent: QueueMessage[] = []
+    const previous = booking({ id: 'bk_previous', status: 'rescheduled', rescheduledTo: 'bk_1' })
+    const moved = booking({
+      rescheduleOf: previous.id,
+      startUtc: START + 24 * 60 * 60_000,
+      endUtc: START + 24 * 60 * 60_000 + 30 * 60_000,
+      externalEventIds: {},
+    })
+
+    await notifyBookingRescheduled({
+      ports: fakePorts(sent, { bookings: { [previous.id]: previous } }),
+      booking: moved,
+      previous,
+      eventType: eventType(),
+      host,
+    })
+
+    const hostEmail = emailTo(sent, host.email).message
+    expect(hostEmail.attachments?.[0]?.contentType).toContain('method=REQUEST')
+    expect(hostEmail.text).toContain('could not be updated automatically')
   })
 })

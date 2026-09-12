@@ -11,14 +11,15 @@
  *   - the link the provider minted is captured and persisted
  *   - the confirmation is dispatched exactly once, even though Queues is
  *     at-least-once and redelivers this very handler
- *   - a calendar outage delays nothing: dispatch still happens when every
- *     connection throws, and when the host has no writable connection at all
+ *   - a transient calendar outage follows the bounded retry schedule, while a
+ *     final attempt and a host with no writable connection still dispatch
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Booking, CalendarConnection, EventType, EventTypeHost, User } from '../../src/core/domain/types.js'
 import type { EnginePorts, QueueMessage } from '../../src/ports.js'
-import { handleOne } from '../../src/adapters/queue/consumer.js'
+import { CalendarApiError } from '../../src/adapters/oauth.js'
+import { dispatchConfirmation, handleOne, handleQueueBatch } from '../../src/adapters/queue/consumer.js'
 
 const MEET = 'https://meet.google.com/abc-defg-hij'
 
@@ -119,18 +120,21 @@ function harness(opts: HarnessOptions = {}) {
 
   const store: { booking: Booking; previous: Booking | null } = { booking, previous: null }
   let claimed = false
+  const recipients = new Set<string>()
+  const calendarTargets = new Map<string, { connectionId: string; calendarId: string; uncertain: boolean }>()
   let rotated = false
   const queued: QueueMessage[] = []
 
   const createEvent = vi.fn(opts.createEvent ?? (async () => ({ id: 'evt_1', conferenceUrl: MEET })))
   const deleteEvent = vi.fn(async () => {})
+  const deleteEventByBookingId = vi.fn(async (_conn: CalendarConnection, _bookingId: string) => {})
   const updateEvent = vi.fn(async () => {})
 
   const ports = {
     clock: { now: () => Date.UTC(2026, 8, 1) },
     crypto: { randomToken: (n = 16) => 'r'.repeat(n), hash: async (v: string) => `h:${v}`, sign: async () => 'sig' },
     config: { baseUrl: 'https://punctual.test', brandName: 'Punctual', supportEmail: 'help@punctual.test' },
-    calendars: { get: () => ({ createEvent, updateEvent, deleteEvent }) },
+    calendars: { get: () => ({ createEvent, updateEvent, deleteEvent, deleteEventByBookingId }) },
     queue: { send: async (m: QueueMessage) => void queued.push(m) },
     repositories: () => ({
       bookings: {
@@ -151,6 +155,17 @@ function harness(opts: HarnessOptions = {}) {
         },
         async rotateManageToken() { rotated = true },
         async releaseConfirmationClaim() { claimed = false },
+        async completeConfirmation() {},
+        async confirmationRecipientQueued(_id: string, audience: string) { return recipients.has(audience) },
+        async markConfirmationRecipientQueued(_id: string, audience: string) { recipients.add(audience) },
+        async calendarTargets() { return [...calendarTargets.values()].map((t) => ({ ...t })) },
+        async rememberCalendarTarget(_id: string, connectionId: string, calendarId: string) {
+          calendarTargets.set(connectionId, { connectionId, calendarId: calendarTargets.get(connectionId)?.calendarId ?? calendarId, uncertain: true })
+        },
+        async rejectCalendarTarget(_id: string, connectionId: string) {
+          const target = calendarTargets.get(connectionId)
+          if (target) target.uncertain = false
+        },
       },
       eventTypes: { async byId() { return { ...eventType, ...opts.eventTypePatch } } },
       eventTypeHosts: { async forEventType() { return opts.hostRows ?? [] } },
@@ -183,6 +198,7 @@ function harness(opts: HarnessOptions = {}) {
     sync,
     wasRotated: () => rotated,
     deleteEvent,
+    deleteEventByBookingId,
     updateEvent,
     setPrevious: (b: Booking) => {
       store.previous = b
@@ -203,7 +219,25 @@ type Attendee = { email: string; name?: string; optional?: boolean }
 const attendeesOf = (call: unknown[]) => (call[1] as { attendees: Attendee[] }).attendees
 
 describe('one event per booking per provider (ADR-0011)', () => {
-  it('three hosts on one provider: ONE event, organized by the first host, with everyone on it', async () => {
+  it('does not invite the organizing account to its own provider event', async () => {
+    const h = harness()
+    await handleOne(h.sync, h.ports)
+
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
+      'ada@example.com',
+    ])
+  })
+
+  it('passes the booking id as the provider create idempotency key', async () => {
+    const h = harness()
+    await handleOne(h.sync, h.ports)
+
+    const event = (h.createEvent.mock.calls[0] as unknown[])[1] as { idempotencyKey?: string }
+    expect(event.idempotencyKey).toBe('bk_1')
+  })
+
+  it('three hosts on one provider: ONE event, with the guest and every other host on it', async () => {
     const h = harness({
       users: [bob, carol],
       connectionsByUser: {
@@ -221,7 +255,6 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(conn.id).toBe('conn_1')
     expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
       'ada@example.com',
-      'grace@example.com',
       'bob@example.com',
       'carol@example.com',
     ])
@@ -244,8 +277,8 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.createEvent).toHaveBeenCalledTimes(2)
     const google = h.createEvent.mock.calls.find((c) => ((c as unknown[])[0] as CalendarConnection).provider === 'google')! as unknown[]
     const microsoft = h.createEvent.mock.calls.find((c) => ((c as unknown[])[0] as CalendarConnection).provider === 'microsoft')! as unknown[]
-    expect(attendeesOf(google).map((a) => a.email)).toEqual(['ada@example.com', 'grace@example.com', 'carol@example.com'])
-    expect(attendeesOf(microsoft).map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
+    expect(attendeesOf(google).map((a) => a.email)).toEqual(['ada@example.com', 'carol@example.com'])
+    expect(attendeesOf(microsoft).map((a) => a.email)).toEqual(['ada@example.com'])
     expect((microsoft[1] as { timezone: string }).timezone).toBe('Europe/Kyiv')
   })
 
@@ -269,7 +302,6 @@ describe('one event per booking per provider (ADR-0011)', () => {
     const attendees = attendeesOf(h.createEvent.mock.calls[0] as unknown[])
     expect(attendees.map((a) => [a.email, a.optional ?? false])).toEqual([
       ['ada@example.com', false],
-      ['grace@example.com', false],
       ['grace.work@example.com', false],
       ['bob@example.com', true],
     ])
@@ -278,7 +310,10 @@ describe('one event per booking per provider (ADR-0011)', () => {
   it('cancelling a booking written before this change (one event per host connection) still removes both', async () => {
     const h = harness({
       users: [bob],
-      connectionsByUser: { u_host: [connection()], u_bob: [connection({ id: 'conn_bob', userId: 'u_bob' })] },
+      connectionsByUser: {
+        u_host: [connection()],
+        u_bob: [connection({ id: 'conn_bob', userId: 'u_bob', providerAccountEmail: 'bob@example.com' })],
+      },
       bookingPatch: {
         hostUserIds: ['u_host', 'u_bob'],
         status: 'cancelled',
@@ -293,10 +328,13 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.store.booking.externalEventIds).toEqual({})
   })
 
-  it('a reschedule updates a legacy per-host event with its own host only, never the whole team', async () => {
+  it('a reschedule updates each legacy per-host event without inviting its calendar owner', async () => {
     const h = harness({
       users: [bob],
-      connectionsByUser: { u_host: [connection()], u_bob: [connection({ id: 'conn_bob', userId: 'u_bob' })] },
+      connectionsByUser: {
+        u_host: [connection()],
+        u_bob: [connection({ id: 'conn_bob', userId: 'u_bob', providerAccountEmail: 'bob@example.com' })],
+      },
       bookingPatch: { hostUserIds: ['u_host', 'u_bob'], externalEventIds: { conn_1: 'evt_a', conn_bob: 'evt_b' } },
       eventTypePatch: teamPatch,
     })
@@ -305,8 +343,8 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.updateEvent).toHaveBeenCalledTimes(2)
     // updateEvent(conn, externalId, event): the event is the THIRD argument.
     const byConn = new Map(h.updateEvent.mock.calls.map((c) => [((c as unknown[])[0] as CalendarConnection).id, ((c as unknown[])[2] as { attendees: Attendee[] }).attendees]))
-    expect(byConn.get('conn_1')!.map((a) => a.email)).toEqual(['ada@example.com', 'grace@example.com', 'bob@example.com'])
-    expect(byConn.get('conn_bob')!.map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
+    expect(byConn.get('conn_1')!.map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
+    expect(byConn.get('conn_bob')!.map((a) => a.email)).toEqual(['ada@example.com'])
   })
 
   it('a redelivered create makes no second event', async () => {
@@ -440,9 +478,8 @@ describe('confirmation dispatch', () => {
   })
 
   it('still dispatches when every calendar write throws', async () => {
-    // A calendar outage must not become an email outage — the whole reason
-    // dispatch sits after the per-connection catch rather than depending on
-    // the sync succeeding.
+    // Direct/inline handling has no delayed queue to retry through, so it is a
+    // final attempt: a calendar outage must not become an email outage.
     const h = harness({
       createEvent: async () => {
         throw new Error('google is down')
@@ -605,6 +642,304 @@ describe('confirmation dispatch', () => {
   })
 })
 
+describe('calendar create retry schedule', () => {
+  it('does not make a sixth calendar attempt when retrying final-warning email dispatch', async () => {
+    const h = harness({ createEvent: async () => { throw new Error('provider unavailable') } })
+    const send = h.ports.queue.send
+    h.ports.queue.send = async (message) => {
+      if (message.kind === 'email' && message.message.to === host.email) throw new Error('queue unavailable')
+      await send(message)
+    }
+    await expect(handleOne(h.sync, h.ports, 5)).rejects.toThrow('queue unavailable')
+    h.ports.queue.send = send
+    await handleOne(h.sync, h.ports, 6)
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(h.emails()).toHaveLength(2)
+  })
+  it('does not attach a host ICS when the initial sync enqueue outcome is unknown', async () => {
+    const h = harness()
+    await dispatchConfirmation('bk_1', h.ports, 'token')
+    expect(h.emails().find((m) => m.message.to === host.email)?.message.attachments).toBeUndefined()
+  })
+  it('retries only the failed email recipient after a partial queue failure', async () => {
+    const h = harness()
+    const send = h.ports.queue.send
+    let failHost = true
+    h.ports.queue.send = async (message) => {
+      if (message.kind === 'email' && message.message.to === host.email && failHost) throw new Error('queue unavailable')
+      await send(message)
+    }
+    await expect(handleOne(h.sync, h.ports, 1)).rejects.toThrow('queue unavailable')
+    expect(h.emails().map((m) => m.message.to)).toEqual(['ada@example.com'])
+    failHost = false
+    await handleOne(h.sync, h.ports, 2)
+    expect(h.emails().map((m) => m.message.to)).toEqual(['ada@example.com', host.email])
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains uncertainty when a later attempt is rejected permanently', async () => {
+    const h = harness({ createEvent: async () => { throw new Error('lost response') } })
+    await expect(handleOne(h.sync, h.ports, 1)).rejects.toThrow()
+    h.createEvent.mockRejectedValue(new CalendarApiError('google', 'forbidden', { status: 403 }))
+    await handleOne(h.sync, h.ports, 2)
+    expect(h.emails().find((m) => m.message.to === host.email)?.message.attachments).toBeUndefined()
+    expect(h.emails().find((m) => m.message.to === host.email)?.message.text).toContain('could not confirm whether')
+  })
+
+  it('keeps the original calendar for cleanup after settings change and retries failed DELETE', async () => {
+    const conn = connection({ calendarIdWrite: 'original' })
+    const h = harness({ connections: [conn], createEvent: async () => { throw new Error('lost response') } })
+    await expect(handleOne(h.sync, h.ports, 1)).rejects.toThrow()
+    conn.calendarIdWrite = 'replacement'
+    h.store.booking.status = 'cancelled'
+    h.deleteEventByBookingId.mockRejectedValueOnce(new Error('delete unavailable'))
+    await expect(handleOne(h.sync, h.ports, 2)).rejects.toThrow()
+    await handleOne(h.sync, h.ports, 3)
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(h.deleteEventByBookingId).toHaveBeenCalledTimes(2)
+    expect(h.deleteEventByBookingId).toHaveBeenLastCalledWith(expect.objectContaining({ calendarIdWrite: 'original' }), 'bk_1')
+    expect(await h.ports.repositories({ consistency: 'bookmark' }).bookings.calendarTargets('bk_1')).toEqual([
+      { connectionId: 'conn_1', calendarId: 'original', uncertain: true },
+    ])
+  })
+
+  it('retains a discovered event id if cancellation cleanup fails during creation', async () => {
+    const h = harness()
+    h.createEvent.mockImplementation(async () => {
+      h.store.booking.status = 'cancelled'
+      return { id: 'created-before-cancel', conferenceUrl: MEET }
+    })
+    h.deleteEvent.mockRejectedValueOnce(new Error('delete unavailable'))
+    await expect(handleOne(h.sync, h.ports, 1)).rejects.toThrow()
+    expect(h.store.booking.externalEventIds).toEqual({ conn_1: 'created-before-cancel' })
+    await handleOne(h.sync, h.ports, 2)
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(h.store.booking.externalEventIds).toEqual({})
+    expect(h.emails()).toEqual([])
+  })
+  it.each([
+    [1, 120],
+    [2, 180],
+    [3, 1_500],
+    [4, 5_400],
+  ])('retries transient delivery attempt %i after %i seconds without dispatching confirmation', async (attempt, delaySeconds) => {
+    const h = harness({
+      createEvent: async () => {
+        throw new CalendarApiError('google', 'events.insert failed', { status: 503 })
+      },
+    })
+    const ack = vi.fn()
+    const retry = vi.fn()
+    const message = { body: h.sync, attempts: attempt, ack, retry }
+
+    await handleQueueBatch({ messages: [message] } as unknown as MessageBatch, h.ports)
+
+    expect(retry).toHaveBeenCalledWith({ delaySeconds })
+    expect(ack).not.toHaveBeenCalled()
+    expect(h.emails()).toHaveLength(0)
+  })
+
+  it('dispatches once without a host ICS after a later attempt creates the calendar event', async () => {
+    let createAttempt = 0
+    const h = harness({
+      createEvent: async () => {
+        createAttempt += 1
+        if (createAttempt === 1) {
+          throw new CalendarApiError('google', 'events.insert failed', { status: 503 })
+        }
+        return { id: 'evt_after_retry', conferenceUrl: MEET }
+      },
+    })
+    const firstAck = vi.fn()
+    const firstRetry = vi.fn()
+
+    await handleQueueBatch(
+      { messages: [{ body: h.sync, attempts: 1, ack: firstAck, retry: firstRetry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(firstRetry).toHaveBeenCalledWith({ delaySeconds: 120 })
+    expect(firstAck).not.toHaveBeenCalled()
+    expect(h.emails()).toHaveLength(0)
+
+    const secondAck = vi.fn()
+    const secondRetry = vi.fn()
+    await handleQueueBatch(
+      { messages: [{ body: h.sync, attempts: 2, ack: secondAck, retry: secondRetry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(secondRetry).not.toHaveBeenCalled()
+    expect(secondAck).toHaveBeenCalledOnce()
+    expect(h.createEvent).toHaveBeenCalledTimes(2)
+    expect(h.store.booking.externalEventIds).toEqual({ conn_1: 'evt_after_retry' })
+    expect(h.store.booking.conferenceUrl).toBe(MEET)
+    expect(h.emails()).toHaveLength(2)
+    const hostEmail = h.emails().find(
+      (queued) => queued.kind === 'email' && queued.message.to === host.email,
+    )
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.attachments : undefined).toBeUndefined()
+  })
+
+  it('removes an ambiguous event without creating it when the booking is cancelled before a retry', async () => {
+    let createAttempt = 0
+    const h = harness({
+      createEvent: async () => {
+        createAttempt += 1
+        if (createAttempt === 1) {
+          throw new CalendarApiError('google', 'events.insert failed', { status: 503 })
+        }
+        return { id: 'evt_created_before_cancel' }
+      },
+    })
+
+    await handleQueueBatch(
+      {
+        messages: [{ body: h.sync, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+      } as unknown as MessageBatch,
+      h.ports,
+    )
+    h.store.booking = {
+      ...h.store.booking,
+      status: 'cancelled',
+      cancelledAt: Date.UTC(2026, 8, 1, 0, 1),
+    }
+    const retryAck = vi.fn()
+
+    await handleQueueBatch(
+      {
+        messages: [{ body: h.sync, attempts: 2, ack: retryAck, retry: vi.fn() }],
+      } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(h.deleteEventByBookingId).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn_1' }),
+      'bk_1',
+    )
+    expect(retryAck).toHaveBeenCalledOnce()
+    expect(h.emails()).toHaveLength(0)
+  })
+
+  it('does not create an event when the first delivery sees an already-cancelled booking', async () => {
+    const h = harness({ bookingPatch: { status: 'cancelled', cancelledAt: Date.UTC(2026, 8, 1) } })
+
+    await handleQueueBatch(
+      {
+        messages: [{ body: h.sync, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+      } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(h.createEvent).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['HTTP 429', new CalendarApiError('google', 'events.insert failed', { status: 429 })],
+    [
+      'Google user rate limit',
+      new CalendarApiError('google', 'events.insert failed', {
+        status: 403,
+        body: '{"reason":"userRateLimitExceeded"}',
+      }),
+    ],
+  ])('retries %s as a transient provider failure', async (_label, providerError) => {
+    const h = harness({
+      createEvent: async () => {
+        throw providerError
+      },
+    })
+    const retry = vi.fn()
+
+    await handleQueueBatch(
+      { messages: [{ body: h.sync, attempts: 1, ack: vi.fn(), retry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(retry).toHaveBeenCalledWith({ delaySeconds: 120 })
+    expect(h.emails()).toHaveLength(0)
+  })
+
+  it('stops retrying before the meeting starts and warns without a duplicate-prone attachment', async () => {
+    const now = Date.UTC(2026, 8, 1)
+    const h = harness({
+      bookingPatch: { startUtc: now + 60_000, endUtc: now + 31 * 60_000 },
+      createEvent: async () => {
+        throw new CalendarApiError('google', 'events.insert failed', { status: 503 })
+      },
+    })
+    const ack = vi.fn()
+    const retry = vi.fn()
+    const message = { body: h.sync, attempts: 1, ack, retry }
+
+    await handleQueueBatch({ messages: [message] } as unknown as MessageBatch, h.ports)
+
+    expect(retry).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalledOnce()
+    const hostEmail = h.emails().find(
+      (queued) => queued.kind === 'email' && queued.message.to === host.email,
+    )
+    const guestEmail = h.emails().find(
+      (queued) => queued.kind === 'email' && queued.message.to === h.store.booking.guestEmail,
+    )
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.attachments : undefined).toBeUndefined()
+    expect(guestEmail?.kind === 'email' ? guestEmail.message.attachments?.[0]?.contentType : undefined)
+      .toContain('method=REQUEST')
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.text : '').toContain(
+      'could not confirm whether it reached your connected calendar',
+    )
+  })
+
+  it('finishes after the fifth transient failure and warns without a duplicate-prone attachment', async () => {
+    const h = harness({
+      createEvent: async () => {
+        throw new CalendarApiError('google', 'events.insert failed', { status: 503 })
+      },
+    })
+    const ack = vi.fn()
+    const retry = vi.fn()
+
+    await handleQueueBatch(
+      { messages: [{ body: h.sync, attempts: 5, ack, retry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(retry).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalledOnce()
+    const hostEmail = h.emails().find(
+      (queued) => queued.kind === 'email' && queued.message.to === host.email,
+    )
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.attachments : undefined).toBeUndefined()
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.text : '').toContain(
+      'could not confirm whether it reached your connected calendar',
+    )
+  })
+
+  it('does not retry a permanent provider error', async () => {
+    const h = harness({
+      createEvent: async () => {
+        throw new CalendarApiError('google', 'events.insert failed', { status: 400 })
+      },
+    })
+    const ack = vi.fn()
+    const retry = vi.fn()
+
+    await handleQueueBatch(
+      { messages: [{ body: h.sync, attempts: 1, ack, retry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(retry).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalledOnce()
+    const hostEmail = h.emails().find(
+      (queued) => queued.kind === 'email' && queued.message.to === host.email,
+    )
+    expect(hostEmail?.kind === 'email' ? hostEmail.message.attachments?.[0]?.contentType : undefined)
+      .toContain('method=REQUEST')
+  })
+})
+
 describe('an update after a host change (booking-hosts.ts)', () => {
   it('creates the missing provider event for a host added on a provider that had none', async () => {
     // Grace (Google) booked alone; Bob (Microsoft) was added afterwards.
@@ -624,12 +959,11 @@ describe('an update after a host change (booking-hosts.ts)', () => {
     expect(h.updateEvent).toHaveBeenCalledTimes(1)
     expect(((h.updateEvent.mock.calls[0] as unknown[])[2] as { attendees: Attendee[] }).attendees.map((a) => a.email)).toEqual([
       'ada@example.com',
-      'grace@example.com',
     ])
     expect(h.createEvent).toHaveBeenCalledTimes(1)
     const [conn, event] = h.createEvent.mock.calls[0] as unknown as [CalendarConnection, { attendees: Attendee[]; location?: string; createConference: boolean }]
     expect(conn.id).toBe('conn_bob')
-    expect(event.attendees.map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
+    expect(event.attendees.map((a) => a.email)).toEqual(['ada@example.com'])
     // The room already exists; the new event points at it rather than minting another.
     expect(event.createConference).toBe(false)
     expect(event.location).toBe(MEET)

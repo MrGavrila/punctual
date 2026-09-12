@@ -4,15 +4,16 @@
  * Lives beside the coordinator because the coordinator is the single path every
  * booking takes (ADR-0002). The web booking flow previously enqueued only the
  * calendar sync, so a guest who booked through the site received no
- * confirmation at all — spec §4.1 requires both parties to get an email with an
- * .ics attachment, and only the REST path did it.
+ * confirmation at all — spec §4.1 requires both parties to get an email, and
+ * only the REST path did it. The guest always receives the .ics; the host gets
+ * one only when the provider definitively rejected the calendar write.
  *
  * Everything here is best-effort and runs AFTER the commit. A mail provider
  * having a bad minute must never cost a booking we already confirmed on screen.
  */
 
 import type { Booking, EventType, User, WebhookEvent } from '../core/domain/types.js'
-import type { EnginePorts } from '../ports.js'
+import type { EnginePorts, QueueMessage } from '../ports.js'
 import { calendarDescription, calendarTitle, participantsFor } from '../core/domain/calendar-text.js'
 import { hostSettings } from '../core/domain/hosts.js'
 import {
@@ -41,10 +42,22 @@ export interface NotifyContext {
   hosts?: User[]
   /** Raw manage token, so the emails can carry a working link. */
   manageToken?: string
+  /** A transient provider failure exhausted retries without proving whether the event exists. */
+  calendarSyncUncertain?: boolean
+  enqueueConfirmation?: (audience: 'guest' | 'host', message: QueueMessage) => Promise<void>
+}
+
+/** Wait for both recipients before releasing the dispatch lease on a failure. */
+async function settleNotifications(tasks: Promise<void>[]): Promise<void> {
+  const results = await Promise.allSettled(tasks)
+  const failure = results.find((r) => r.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 }
 
 /**
- * Confirmations for guest and host, each with the same .ics.
+ * Confirmations for guest and host. A generated .ics always goes to the guest;
+ * the host receives it only when no event was written to one of their connected
+ * calendars, where it serves as the fallback instead of creating a duplicate.
  *
  * The attachment is METHOD:REQUEST so calendar clients offer to add it. The
  * UID is stable across a reschedule chain and the SEQUENCE increases, which is
@@ -100,6 +113,8 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
     console.warn('[punctual] .ics too large to attach; sending confirmation without it')
   }
 
+  const hostSynced = await hostHasSyncedCalendarEvent(ports, booking, host)
+  const hostAttachments = hostSynced || ctx.calendarSyncUncertain === true ? undefined : attachments
   const shared = {
     booking,
     eventType,
@@ -109,18 +124,22 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
     supportEmail: ports.config.supportEmail,
     baseUrl: ports.config.baseUrl,
     ...(manageUrl ? { rescheduleUrl: manageUrl, cancelUrl: manageUrl } : {}),
-    hasAttachment: Boolean(attachments),
   }
 
-  const guest = bookingConfirmationForGuest(shared)
-  const hostMail = bookingConfirmationForHost(shared)
+  const guest = bookingConfirmationForGuest({ ...shared, hasAttachment: Boolean(attachments) })
+  const hostMail = bookingConfirmationForHost({
+    ...shared,
+    hasAttachment: Boolean(hostAttachments),
+    ...(hostSynced ? { calendarSynced: true } : {}),
+    ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
+  })
 
   // Sent independently rather than as one batch: a batch is atomic, so an
   // oversized or malformed host message would take the guest's confirmation
   // down with it.
-  await Promise.all([
-    ports.queue
-      .send({
+  const enqueue = ctx.enqueueConfirmation ?? ((_audience, message) => ports.queue.send(message))
+  await settleNotifications([
+    enqueue('guest', {
         kind: 'email',
         message: {
           to: booking.guestEmail,
@@ -130,10 +149,8 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
           text: guest.text,
           ...(attachments ? { attachments } : {}),
         },
-      })
-      .catch((err) => console.error('[punctual] guest confirmation failed to queue', err)),
-    ports.queue
-      .send({
+      }),
+    enqueue('host', {
         kind: 'email',
         message: {
           to: host.email,
@@ -141,11 +158,10 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
-          ...(attachments ? { attachments } : {}),
+          ...(hostAttachments ? { attachments: hostAttachments } : {}),
           replyTo: booking.guestEmail,
         },
-      })
-      .catch((err) => console.error('[punctual] host notification failed to queue', err)),
+      }),
     notifyWebhooks(ports, 'booking.created', booking, eventType),
   ])
 }
@@ -290,6 +306,27 @@ async function buildAttachment(
 }
 
 /**
+ * A provider event is the host's authoritative calendar copy. Sending the
+ * same .ics to that host lets Gmail create a second attendee copy beside it.
+ * An id is persisted only after a provider accepted the event, so no matching
+ * id means the attachment is still needed as the host's delivery fallback.
+ */
+async function hostHasSyncedCalendarEvent(
+  ports: EnginePorts,
+  booking: Booking,
+  host: User,
+): Promise<boolean> {
+  const connectionIds = Object.keys(booking.externalEventIds)
+  if (connectionIds.length === 0) return false
+  const repos = ports.repositories({ consistency: 'unconstrained' })
+  for (const connectionId of connectionIds) {
+    const connection = await repos.connections.byId(connectionId)
+    if (connection?.userId === host.id) return true
+  }
+  return false
+}
+
+/**
  * Base64 for the .ics body.
  *
  * Encodes UTF-8 bytes rather than code units: `btoa` throws on any character
@@ -348,6 +385,7 @@ export async function notifyBookingCancelled(ctx: {
   const attachments = await buildAttachment(
     ports, booking, eventType, host, ctx.hosts, 'CANCEL',
   )
+  const hostAttachments = (await hostHasSyncedCalendarEvent(ports, booking, host)) ? undefined : attachments
 
   await Promise.all([
     ports.queue
@@ -372,7 +410,7 @@ export async function notifyBookingCancelled(ctx: {
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
-          ...(attachments ? { attachments } : {}),
+          ...(hostAttachments ? { attachments: hostAttachments } : {}),
         },
       })
       .catch((err) => console.error('[punctual] host cancellation failed to queue', err)),
@@ -396,6 +434,8 @@ export async function notifyBookingRescheduled(ctx: {
   host: User
   hosts?: User[]
   manageToken?: string
+  calendarSyncUncertain?: boolean
+  enqueueConfirmation?: NotifyContext['enqueueConfirmation']
 }): Promise<void> {
   const { ports, booking, eventType, host } = ctx
   const manageUrl = ctx.manageToken
@@ -412,6 +452,8 @@ export async function notifyBookingRescheduled(ctx: {
   const attachments = await buildAttachment(
     ports, booking, eventType, host, ctx.hosts, 'REQUEST', manageUrl,
   )
+  const hostSynced = await hostHasSyncedCalendarEvent(ports, booking, host)
+  const hostAttachments = hostSynced || ctx.calendarSyncUncertain === true ? undefined : attachments
 
   const shared = {
     booking,
@@ -422,15 +464,20 @@ export async function notifyBookingRescheduled(ctx: {
     brandName: ports.config.brandName,
     supportEmail: ports.config.supportEmail,
     ...(manageUrl ? { rescheduleUrl: manageUrl, cancelUrl: manageUrl } : {}),
-    hasAttachment: Boolean(attachments),
   }
 
-  const guest = bookingRescheduled({ ...shared, audience: 'guest' })
-  const hostMail = bookingRescheduled({ ...shared, audience: 'host' })
+  const guest = bookingRescheduled({ ...shared, audience: 'guest', hasAttachment: Boolean(attachments) })
+  const hostMail = bookingRescheduled({
+    ...shared,
+    audience: 'host',
+    hasAttachment: Boolean(hostAttachments),
+    ...(hostSynced ? { calendarSynced: true } : {}),
+    ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
+  })
 
-  await Promise.all([
-    ports.queue
-      .send({
+  const enqueue = ctx.enqueueConfirmation ?? ((_audience, message) => ports.queue.send(message))
+  await settleNotifications([
+    enqueue('guest', {
         kind: 'email',
         message: {
           to: booking.guestEmail,
@@ -440,10 +487,8 @@ export async function notifyBookingRescheduled(ctx: {
           text: guest.text,
           ...(attachments ? { attachments } : {}),
         },
-      })
-      .catch((err) => console.error('[punctual] guest reschedule mail failed to queue', err)),
-    ports.queue
-      .send({
+      }),
+    enqueue('host', {
         kind: 'email',
         message: {
           to: host.email,
@@ -452,10 +497,9 @@ export async function notifyBookingRescheduled(ctx: {
           html: hostMail.html,
           text: hostMail.text,
           replyTo: booking.guestEmail,
-          ...(attachments ? { attachments } : {}),
+          ...(hostAttachments ? { attachments: hostAttachments } : {}),
         },
-      })
-      .catch((err) => console.error('[punctual] host reschedule mail failed to queue', err)),
+      }),
     notifyWebhooks(ports, 'booking.rescheduled', booking, eventType),
   ])
 }

@@ -1,9 +1,9 @@
 /**
  * `EmailSender` adapters.
  *
- * Every booking email carries an .ics attachment, so attachment support is not
- * optional in either implementation — a sender that silently drops attachments
- * would produce confirmations that do not land in the guest's calendar.
+ * Guest booking emails carry an .ics attachment, and host emails use one as a
+ * fallback when no connected provider calendar received the event. Attachment
+ * support is therefore mandatory in either sender implementation.
  *
  * Delivery failures throw. The queue consumer (ADR-0006) is what retries, so
  * swallowing an error here would turn a transient provider blip into a
