@@ -643,6 +643,47 @@ describe('confirmation dispatch', () => {
 })
 
 describe('calendar create retry schedule', () => {
+  it.each(['guest', 'host', 'both'] as const)(
+    'does not restart a rejected calendar write when retrying %s email delivery',
+    async (failedAudience) => {
+      const h = harness()
+      h.createEvent.mockRejectedValueOnce(new CalendarApiError('google', 'rejected', { status: 400 }))
+      const send = h.ports.queue.send
+      h.ports.queue.send = async (message) => {
+        if (message.kind === 'email' && (
+          failedAudience === 'both' ||
+          message.message.to === (failedAudience === 'guest' ? h.store.booking.guestEmail : host.email)
+        )) throw new Error('queue unavailable')
+        await send(message)
+      }
+
+      await expect(handleOne(h.sync, h.ports, 1)).rejects.toThrow('queue unavailable')
+      h.ports.queue.send = send
+      await handleOne(h.sync, h.ports, 2)
+
+      expect(h.createEvent).toHaveBeenCalledTimes(1)
+      expect(h.store.booking.externalEventIds).toEqual({})
+      expect(h.emails()).toHaveLength(2)
+      expect(h.emails().find((m) => m.message.to === host.email)?.message.attachments?.[0]?.contentType)
+        .toContain('method=REQUEST')
+    },
+  )
+
+  it.each([
+    [-1, 1],
+    [0, 0],
+    [60_000, 0],
+  ])('checks the meeting deadline on delivery at start offset %i ms', async (offset, expectedCreates) => {
+    const h = harness()
+    h.ports.clock.now = () => h.store.booking.startUtc + offset
+
+    await handleOne(h.sync, h.ports, 2)
+
+    expect(h.createEvent).toHaveBeenCalledTimes(expectedCreates)
+    expect(h.store.booking.externalEventIds).toEqual(expectedCreates ? { conn_1: 'evt_1' } : {})
+    expect(h.emails()).toHaveLength(2)
+  })
+
   it('does not make a sixth calendar attempt when retrying final-warning email dispatch', async () => {
     const h = harness({ createEvent: async () => { throw new Error('provider unavailable') } })
     const send = h.ports.queue.send

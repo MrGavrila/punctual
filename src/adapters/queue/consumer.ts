@@ -237,6 +237,11 @@ async function syncCalendar(
       // overwrites the first id, leaving it unreachable by every delete
       // path — a permanent phantom on the host's calendar.
       if (booking.externalEventIds[conn.id]) continue
+      // A definitive rejection remains final when only email delivery retries.
+      // Recreating here could duplicate the host's already-enqueued fallback ICS.
+      if (msg.action === 'create' && priorTargets.some((t) => t.connectionId === conn.id && !t.uncertain)) continue
+      // Queue delays are approximate: check this delivery, not only the next retry.
+      if (ports.clock.now() >= booking.startUtc) continue
       // A sixth queue delivery can be an EMAIL retry after the fifth calendar
       // attempt. It must not silently restart the exhausted calendar schedule.
       if (msg.action === 'create' && deliveryAttempt > 5) {
