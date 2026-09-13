@@ -490,7 +490,11 @@ async function planInvites(
       const optional = settings.get(h.user.id)?.required === false
       const onThisProvider = h.writable.filter((c) => c.provider === provider)
       if (onThisProvider.length > 0) {
-        add(h.user.email, h.user.name || h.user.slug, optional)
+        // The organizer already owns the provider event. Their profile email
+        // may be an alias of a differently named connected account; inviting
+        // that alias makes Google mirror the same meeting onto the primary
+        // calendar when the write target is a secondary calendar.
+        if (h.user.id !== organizer.user.id) add(h.user.email, h.user.name || h.user.slug, optional)
         for (const c of onThisProvider) add(c.providerAccountEmail, h.user.name || h.user.slug, optional)
       } else if (index === 0 && unconnected.includes(h)) {
         add(h.user.email, h.user.name || h.user.slug, optional)

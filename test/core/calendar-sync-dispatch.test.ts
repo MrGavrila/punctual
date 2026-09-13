@@ -229,6 +229,23 @@ describe('one event per booking per provider (ADR-0011)', () => {
     ])
   })
 
+  it('does not invite the organizer profile address when its Google account address differs', async () => {
+    const h = harness({
+      connections: [
+        connection({
+          providerAccountEmail: 'organizer@gmail.example',
+          calendarIdWrite: 'bookings-secondary-calendar',
+        }),
+      ],
+    })
+    await handleOne(h.sync, h.ports)
+
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
+      'ada@example.com',
+    ])
+  })
+
   it('passes the booking id as the provider create idempotency key', async () => {
     const h = harness()
     await handleOne(h.sync, h.ports)
