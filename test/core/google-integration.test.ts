@@ -275,6 +275,30 @@ describe('busy time actually removes slots', () => {
 })
 
 describe('creating the event on the host calendar', () => {
+  it('writes and removes a host-only event without Google invitation emails', async () => {
+    const { fetchImpl, calls } = scriptGoogle([
+      [/\/events/, () => ({ json: { id: 'evt_host', hangoutLink: 'https://meet.google.com/abc' } })],
+    ])
+    const provider = createGoogleProvider(deps(fetchImpl))
+    const event = {
+      title: 'ICS booking', description: 'Guest: guest@example.com',
+      start: 0, end: 1_800_000, timezone: 'UTC', attendees: [], createConference: true,
+    }
+    const created = await provider.createEvent(connection(), event)
+    await provider.updateEvent(connection(), created.id, {
+      ...event, start: 3_600_000, end: 5_400_000, createConference: false,
+      location: created.conferenceUrl!,
+    })
+    await provider.deleteEvent(connection(), created.id)
+
+    expect(calls.map((call) => call.method)).toEqual(['POST', 'PATCH', 'DELETE'])
+    for (const call of calls) expect(new URL(call.url).searchParams.get('sendUpdates')).toBe('none')
+    for (const call of calls.slice(0, 2)) expect(call.body).toHaveProperty('attendees', [])
+    expect(created.conferenceUrl).toBe('https://meet.google.com/abc')
+    expect(calls[1]!.body).toHaveProperty('location', created.conferenceUrl)
+    expect(calls[1]!.body).not.toHaveProperty('conferenceData')
+  })
+
   it('posts the meeting and requests a Meet link', async () => {
     const { fetchImpl, calls } = scriptGoogle([
       [/events\?|events$/, () => ({ json: { id: 'evt_123', hangoutLink: 'https://meet.google.com/abc' } })],

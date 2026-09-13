@@ -278,10 +278,35 @@ up — point monitoring at `warnings` being non-empty, not at `ok`.
 deployment can turn off. Outlook sends its own meeting request whenever an
 event has attendees, and Microsoft documents that as mandatory with no opt-out
 — so a guest booking with a Microsoft-connected host gets Punctual's
-confirmation *and* Outlook's invite. Google's equivalent is suppressed
-(`sendUpdates=none`), which is why Google guests get one. Punctual's own email
+confirmation *and* Outlook's invite. Punctual's own email
 is the complete one: it carries the meeting link, the answers to your intake
 questions, and the reschedule/cancel links.
+
+**Google guest invitations use Punctual ICS in this fork.** For a personal
+booking, Punctual sends one email with a calendar attachment to the guest
+and one informational email to the host. The host's connected Google
+calendar gets the event directly, without adding the guest as a native
+Google attendee. `sendUpdates=none` remains in place; that flag alone does
+not prevent a second attendee calendar copy. Guest details remain in the
+event description, and the same Meet link appears in both emails.
+
+Creation, reschedule and cancellation use the same guest ICS UID with
+increasing sequence numbers. The organizer is not also listed as a host
+attendee in the ICS. The host gets an ICS fallback only when no native event
+was written and its absence is known, not after an uncertain write.
+
+Calendar auto-add and reminders depend on the recipient's settings; accepting
+an invitation may be necessary. Guest RSVP responses are not synchronized
+to the host-only Google event or to Punctual booking status. Manage bookings
+through Punctual's reschedule/cancel links, not by deleting a calendar copy.
+Because the guest is not on Google's native invitation list, the host may
+need to admit them to Meet ([Google Meet joining rules](https://support.google.com/meet/answer/9303069)).
+Do not loosen meeting access controls merely to bypass that step.
+
+This policy does not change Microsoft delivery or promise one email for
+multi-provider team bookings. Existing duplicates are not merged by a
+deployment: cancel test bookings through Punctual and verify a fresh booking,
+reschedule and cancellation before accepting the rollout.
 
 **A co-host sees the meeting as an invitation, not as their own event.**
 By design. A team booking is written once per calendar provider: the first

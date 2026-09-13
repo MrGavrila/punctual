@@ -203,7 +203,15 @@ async function syncCalendar(
     // same address as an attendee makes Google propagate a second copy to the
     // account's primary calendar when the organizer calendar is secondary.
     const ownerEmail = conn.providerAccountEmail.trim().toLowerCase()
-    const providerAttendees = attendees.filter((attendee) => attendee.email.trim().toLowerCase() !== ownerEmail)
+    const guestEmail = booking.guestEmail.trim().toLowerCase()
+    const providerAttendees = attendees.filter((attendee) => {
+      const email = attendee.email.trim().toLowerCase()
+      // Punctual sends the guest's REQUEST/CANCEL ICS. Even sendUpdates=none
+      // can propagate a Google attendee copy with a different UID. Keep the
+      // guest in the description, not in Google's native attendee list, on
+      // both creation and update. Other providers retain their own policy.
+      return email !== ownerEmail && !(conn.provider === 'google' && email === guestEmail)
+    })
     return {
       title,
       description,

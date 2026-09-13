@@ -219,14 +219,36 @@ type Attendee = { email: string; name?: string; optional?: boolean }
 const attendeesOf = (call: unknown[]) => (call[1] as { attendees: Attendee[] }).attendees
 
 describe('one event per booking per provider (ADR-0011)', () => {
+  it('delivers the Google guest invitation through Punctual ICS only, including on update', async () => {
+    const h = harness({ bookingPatch: { guestEmail: ' ADA@EXAMPLE.COM ' } })
+    await handleOne(h.sync, h.ports)
+
+    const created = (h.createEvent.mock.calls[0] as unknown[])[1] as {
+      attendees: Attendee[]; description: string; createConference: boolean
+    }
+    expect(created.attendees).toEqual([])
+    expect(created.description).toContain('ADA@EXAMPLE.COM')
+    expect(created.createConference).toBe(true)
+    expect(h.emails()).toHaveLength(2)
+    const guest = h.emails().find((m) => m.message.to === h.store.booking.guestEmail)!.message
+    const owner = h.emails().find((m) => m.message.to === host.email)!.message
+    expect(guest.attachments).toHaveLength(1)
+    expect(guest.attachments![0]!.contentType).toContain('method=REQUEST')
+    expect(guest.text).toContain(MEET)
+    expect(owner.attachments).toBeUndefined()
+
+    await handleOne({ ...h.sync, action: 'update' }, h.ports)
+    const updated = (h.updateEvent.mock.calls[0] as unknown[])[2] as { attendees: Attendee[] }
+    expect(updated.attendees).toEqual([])
+    expect(h.createEvent).toHaveBeenCalledTimes(1)
+  })
+
   it('does not invite the organizing account to its own provider event', async () => {
     const h = harness()
     await handleOne(h.sync, h.ports)
 
     expect(h.createEvent).toHaveBeenCalledTimes(1)
-    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
-      'ada@example.com',
-    ])
+    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[])).toEqual([])
   })
 
   it('does not invite the organizer profile address when its Google account address differs', async () => {
@@ -241,9 +263,7 @@ describe('one event per booking per provider (ADR-0011)', () => {
     await handleOne(h.sync, h.ports)
 
     expect(h.createEvent).toHaveBeenCalledTimes(1)
-    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
-      'ada@example.com',
-    ])
+    expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[])).toEqual([])
   })
 
   it('passes the booking id as the provider create idempotency key', async () => {
@@ -254,7 +274,7 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(event.idempotencyKey).toBe('bk_1')
   })
 
-  it('three hosts on one provider: ONE event, with the guest and every other host on it', async () => {
+  it('three Google hosts: ONE event with the co-hosts; the guest uses ICS only', async () => {
     const h = harness({
       users: [bob, carol],
       connectionsByUser: {
@@ -271,7 +291,6 @@ describe('one event per booking per provider (ADR-0011)', () => {
     const [conn] = h.createEvent.mock.calls[0]! as unknown as [CalendarConnection]
     expect(conn.id).toBe('conn_1')
     expect(attendeesOf(h.createEvent.mock.calls[0] as unknown[]).map((a) => a.email)).toEqual([
-      'ada@example.com',
       'bob@example.com',
       'carol@example.com',
     ])
@@ -294,7 +313,7 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.createEvent).toHaveBeenCalledTimes(2)
     const google = h.createEvent.mock.calls.find((c) => ((c as unknown[])[0] as CalendarConnection).provider === 'google')! as unknown[]
     const microsoft = h.createEvent.mock.calls.find((c) => ((c as unknown[])[0] as CalendarConnection).provider === 'microsoft')! as unknown[]
-    expect(attendeesOf(google).map((a) => a.email)).toEqual(['ada@example.com', 'carol@example.com'])
+    expect(attendeesOf(google).map((a) => a.email)).toEqual(['carol@example.com'])
     expect(attendeesOf(microsoft).map((a) => a.email)).toEqual(['ada@example.com'])
     expect((microsoft[1] as { timezone: string }).timezone).toBe('Europe/Kyiv')
   })
@@ -318,7 +337,6 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.createEvent).toHaveBeenCalledTimes(1)
     const attendees = attendeesOf(h.createEvent.mock.calls[0] as unknown[])
     expect(attendees.map((a) => [a.email, a.optional ?? false])).toEqual([
-      ['ada@example.com', false],
       ['grace.work@example.com', false],
       ['bob@example.com', true],
     ])
@@ -360,8 +378,8 @@ describe('one event per booking per provider (ADR-0011)', () => {
     expect(h.updateEvent).toHaveBeenCalledTimes(2)
     // updateEvent(conn, externalId, event): the event is the THIRD argument.
     const byConn = new Map(h.updateEvent.mock.calls.map((c) => [((c as unknown[])[0] as CalendarConnection).id, ((c as unknown[])[2] as { attendees: Attendee[] }).attendees]))
-    expect(byConn.get('conn_1')!.map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
-    expect(byConn.get('conn_bob')!.map((a) => a.email)).toEqual(['ada@example.com'])
+    expect(byConn.get('conn_1')!.map((a) => a.email)).toEqual(['bob@example.com'])
+    expect(byConn.get('conn_bob')!).toEqual([])
   })
 
   it('a redelivered create makes no second event', async () => {
@@ -1015,9 +1033,7 @@ describe('an update after a host change (booking-hosts.ts)', () => {
     await handleOne({ ...h.sync, action: 'update' }, h.ports)
 
     expect(h.updateEvent).toHaveBeenCalledTimes(1)
-    expect(((h.updateEvent.mock.calls[0] as unknown[])[2] as { attendees: Attendee[] }).attendees.map((a) => a.email)).toEqual([
-      'ada@example.com',
-    ])
+    expect(((h.updateEvent.mock.calls[0] as unknown[])[2] as { attendees: Attendee[] }).attendees).toEqual([])
     expect(h.createEvent).toHaveBeenCalledTimes(1)
     const [conn, event] = h.createEvent.mock.calls[0] as unknown as [CalendarConnection, { attendees: Attendee[]; location?: string; createConference: boolean }]
     expect(conn.id).toBe('conn_bob')
@@ -1048,7 +1064,7 @@ describe('an update after a host change (booking-hosts.ts)', () => {
     const [conn, externalId, event] = h.updateEvent.mock.calls[0] as unknown as [CalendarConnection, string, { attendees: Attendee[] }]
     expect(conn.id).toBe('conn_1')
     expect(externalId).toBe('evt_g')
-    expect(event.attendees.map((a) => a.email)).toEqual(['ada@example.com', 'bob@example.com'])
+    expect(event.attendees.map((a) => a.email)).toEqual(['bob@example.com'])
   })
 
   it('a redelivered update creates nothing twice', async () => {

@@ -33,6 +33,17 @@ import {
 /** A booking known to have no predecessor gets an empty chain, not `undefined`. */
 const NO_CHAIN: ReadonlyMap<string, Booking> = new Map()
 
+/** The organizer owns the invitation; do not invite that address a second time. */
+function invitationAttendees(booking: Booking, host: User, hosts: User[] = [host]) {
+  const organizerEmail = host.email.trim().toLowerCase()
+  return [
+    { email: booking.guestEmail, name: booking.guestName },
+    ...hosts
+      .filter((h) => h.email.trim().toLowerCase() !== organizerEmail)
+      .map((h) => ({ email: h.email, name: h.name || h.slug })),
+  ]
+}
+
 export interface NotifyContext {
   ports: EnginePorts
   booking: Booking
@@ -88,10 +99,7 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
       booking,
       eventType,
       organizer: { email: host.email, name: host.name || host.slug },
-      attendees: [
-        { email: booking.guestEmail, name: booking.guestName },
-        ...(ctx.hosts ?? [host]).map((h) => ({ email: h.email, name: h.name || h.slug })),
-      ],
+      attendees: invitationAttendees(booking, host, ctx.hosts),
       ...(await invitationText(ports, booking, eventType, ctx.hosts ?? [host])),
       ...(manageUrl ? { url: manageUrl } : {}),
     })
@@ -282,10 +290,7 @@ async function buildAttachment(
       booking,
       eventType,
       organizer: { email: host.email, name: host.name || host.slug },
-      attendees: [
-        { email: booking.guestEmail, name: booking.guestName },
-        ...(hosts ?? [host]).map((h) => ({ email: h.email, name: h.name || h.slug })),
-      ],
+      attendees: invitationAttendees(booking, host, hosts),
       ...(await invitationText(ports, booking, eventType, hosts ?? [host])),
       ...(url ? { url } : {}),
     })

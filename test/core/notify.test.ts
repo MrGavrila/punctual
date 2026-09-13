@@ -203,6 +203,44 @@ describe('notifyBookingCancelled — CANCEL suppressed for a superseded leg', ()
 })
 
 describe('booking notifications — host calendar attachment fallback', () => {
+  it('keeps one guest ICS identity across creation, reschedule and cancellation without inviting its organizer', async () => {
+    const sent: QueueMessage[] = []
+    const original = booking({ externalEventIds: { conn_google: 'google_event_1' } })
+    const moved = booking({
+      id: 'bk_2', rescheduleOf: original.id,
+      startUtc: START + 3_600_000, endUtc: START + 5_400_000,
+      externalEventIds: original.externalEventIds,
+    })
+    const ports = fakePorts(sent, {
+      bookings: { [original.id]: original }, connectionOwners: { conn_google: host.id },
+    })
+    await notifyBookingCreated({ ports, booking: original, eventType: eventType(), host })
+    await notifyBookingRescheduled({ ports, booking: moved, previous: original, eventType: eventType(), host })
+    await notifyBookingCancelled({
+      ports, booking: { ...moved, status: 'cancelled', cancelledAt: START },
+      eventType: eventType(), host, cancelledBy: 'guest',
+    })
+
+    const emails = sent.filter((m) => m.kind === 'email')
+    expect(emails).toHaveLength(6) // one per recipient, per action
+    const guests = emails.filter((m) => m.message.to === original.guestEmail)
+    expect(guests).toHaveLength(3)
+    for (const [index, message] of guests.entries()) {
+      expect(message.message.attachments).toHaveLength(1)
+      const ics = atob(message.message.attachments![0]!.content).replace(/\r\n[ \t]/g, '')
+      expect(ics).toContain('UID:bk_1@punctual\r\n')
+      expect(ics).toContain(`SEQUENCE:${index}\r\n`)
+      expect(ics).toContain(`METHOD:${index === 2 ? 'CANCEL' : 'REQUEST'}\r\n`)
+      expect(ics).toContain(`ORGANIZER;CN=Grace Hopper:mailto:${host.email}`)
+      const attendees = ics.split('\r\n').filter((line) => line.startsWith('ATTENDEE;'))
+      expect(attendees).toHaveLength(1)
+      expect(attendees[0]).toContain(`mailto:${original.guestEmail}`)
+    }
+    const owners = emails.filter((m) => m.message.to === host.email)
+    expect(owners).toHaveLength(3)
+    for (const owner of owners) expect(owner.message.attachments).toBeUndefined()
+  })
+
   it('keeps the REQUEST for the guest but omits it from a host whose calendar event synced', async () => {
     const sent: QueueMessage[] = []
     const synced = booking({ externalEventIds: { conn_google: 'google_event_1' } })
