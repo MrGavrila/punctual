@@ -652,6 +652,8 @@ export interface DeliveryTaskRepository {
 }
 
 export interface EmailDeliveryMetadata {
+  bookingId: string
+  action: 'confirmed' | 'rescheduled' | 'cancelled'
   key: string
   preparedAt: number
   deadlineAt: number

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { EmailDeliveryError } from '../../src/adapters/email/index.js'
 import { handleOne, handleQueueBatch } from '../../src/adapters/queue/consumer.js'
+import type { Booking } from '../../src/core/domain/types.js'
 import type { EmailMessage, EnginePorts, QueueMessage, QueueSendOptions } from '../../src/ports.js'
 
 const MINUTE = 60_000
@@ -15,6 +16,8 @@ function message(round = 0): Extract<QueueMessage, { kind: 'email' }> {
       html: '<p>Booked</p>',
       text: 'Booked',
       delivery: {
+        bookingId: 'bk_1',
+        action: 'confirmed',
         key: 'booking/bk_1/confirmed/guest/aaaaaaaaaaaaaaaa',
         preparedAt: PREPARED,
         deadlineAt: PREPARED + 4 * 60 * MINUTE,
@@ -25,22 +28,79 @@ function message(round = 0): Extract<QueueMessage, { kind: 'email' }> {
 }
 
 function harness(now: number, failure?: unknown) {
+  let bookingStatus: Booking['status'] | null = 'confirmed'
+  const byId = vi.fn(async (_id: string) => bookingStatus === null ? null : ({
+    id: 'bk_1', status: bookingStatus, rescheduledTo: bookingStatus === 'rescheduled' ? 'bk_2' : null,
+  }))
+  const repositories = vi.fn(() => ({ bookings: { byId } }))
   const sent: Array<{ message: QueueMessage; options?: QueueSendOptions }> = []
   const email = vi.fn(async (_message: EmailMessage) => {
     if (failure) throw failure
   })
   const ports = {
     clock: { now: () => now },
+    repositories,
     email: { send: email },
     queue: {
       send: async (queued: QueueMessage, options?: QueueSendOptions) => { sent.push({ message: queued, options }) },
       sendBatch: async () => {},
     },
   } as unknown as EnginePorts
-  return { ports, email, sent }
+  return { ports, email, sent, byId, repositories, setStatus(status: Booking['status'] | null) { bookingStatus = status } }
 }
 
 describe('bounded booking email delivery', () => {
+  it.each([
+    ['confirmed', 'cancelled'],
+    ['confirmed', 'rescheduled'],
+    ['rescheduled', 'cancelled'],
+    ['rescheduled', 'rescheduled'],
+  ] as const)('drops a queued %s retry after the booking becomes %s', async (action, status) => {
+    const h = harness(PREPARED, new EmailDeliveryError('temporary', true, 503))
+    const original = message()
+    original.message.delivery!.action = action
+    original.message.delivery!.key = `booking/bk_1/${action}/guest/hash`
+    await handleOne(original, h.ports)
+    expect(h.email).toHaveBeenCalledTimes(1)
+    expect(h.sent).toHaveLength(1)
+
+    h.setStatus(status)
+    h.ports.clock.now = () => PREPARED + 2 * MINUTE
+    await handleOne(h.sent[0]!.message, h.ports)
+
+    expect(h.email).toHaveBeenCalledTimes(1)
+    expect(h.sent).toHaveLength(1)
+    expect(h.byId).toHaveBeenCalledWith('bk_1')
+    expect(h.repositories).toHaveBeenCalledWith({ consistency: 'bookmark' })
+  })
+
+  it('still sends a current reschedule notification', async () => {
+    const h = harness(PREPARED)
+    const current = message()
+    current.message.delivery!.action = 'rescheduled'
+    await handleOne(current, h.ports)
+    expect(h.email).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not send confirmation when its booking no longer exists', async () => {
+    const h = harness(PREPARED)
+    h.setStatus(null)
+    await handleOne(message(), h.ports)
+    expect(h.email).not.toHaveBeenCalled()
+    expect(h.sent).toEqual([])
+  })
+
+  it('retries without sending when the authoritative booking read fails', async () => {
+    const h = harness(PREPARED)
+    h.byId.mockRejectedValueOnce(new Error('D1 unavailable'))
+    const ack = vi.fn()
+    const retry = vi.fn()
+    await handleQueueBatch({ messages: [{ body: message(), attempts: 1, ack, retry }] } as unknown as MessageBatch, h.ports)
+    expect(h.email).not.toHaveBeenCalled()
+    expect(ack).not.toHaveBeenCalled()
+    expect(retry).toHaveBeenCalledTimes(1)
+  })
+
   it('requeues a temporary failure for the next absolute round with the same payload and key', async () => {
     const h = harness(PREPARED, new EmailDeliveryError('temporary', true, 503))
     const original = message()

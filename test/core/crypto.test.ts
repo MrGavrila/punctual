@@ -348,6 +348,8 @@ describe('Resend sender', () => {
       text: 'Booked',
       delivery: {
         key: 'booking/bk_1/confirmed/guest',
+        bookingId: 'bk_1',
+        action: 'confirmed',
         preparedAt: 1_797_000_000_000,
         deadlineAt: 1_797_003_600_000,
         round: 0,

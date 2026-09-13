@@ -241,12 +241,16 @@ describe('booking notifications — host calendar attachment fallback', () => {
     expect(firstConfirmation).toEqual([
       {
         key: 'booking/bk_1/confirmed/guest/aaaaaaaaaaaaaaaa',
+        bookingId: 'bk_1',
+        action: 'confirmed',
         preparedAt: Date.UTC(2026, 7, 10, 12, 0, 0),
         deadlineAt: START,
         round: 0,
       },
       {
         key: 'booking/bk_1/confirmed/host/bbbbbbbbbbbbbbbb',
+        bookingId: 'bk_1',
+        action: 'confirmed',
         preparedAt: Date.UTC(2026, 7, 10, 12, 0, 0),
         deadlineAt: START,
         round: 0,

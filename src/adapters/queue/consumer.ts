@@ -465,6 +465,18 @@ async function deliverEmail(
     return
   }
 
+  // A queued confirmation can outlive cancellation or another reschedule.
+  // Read the primary immediately before sending; a failed read must retry,
+  // never send a notification whose current validity could not be checked.
+  if (delivery.action === 'confirmed' || delivery.action === 'rescheduled') {
+    const repos = ports.repositories({ consistency: 'bookmark' })
+    const booking = await repos.bookings.byId(delivery.bookingId)
+    if (!booking || booking.status !== 'confirmed' || booking.rescheduledTo !== null) {
+      console.info('[punctual] booking email skipped: superseded or missing booking')
+      return
+    }
+  }
+
   const effectiveRound = latestDueRound
   try {
     await ports.email.send({

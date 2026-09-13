@@ -21,6 +21,8 @@ function emailTask(audience: 'guest' | 'host'): DeliveryTaskDraft {
       html: '<p>Cancelled</p>',
       text: 'Cancelled',
       delivery: {
+        bookingId: 'bk_1',
+        action: 'cancelled',
         key: `booking/bk_1/cancelled/${audience}/hash`,
         preparedAt: NOW,
         deadlineAt: START,

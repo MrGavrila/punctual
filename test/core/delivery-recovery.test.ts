@@ -29,7 +29,7 @@ function emailTask(patch: Partial<DeliveryTask> = {}): DeliveryTask {
     kind: 'email',
     payload: {
       to: 'guest@example.test', subject: 'Cancelled', html: '<p>Cancelled</p>', text: 'Cancelled',
-      delivery: { key: 'booking/bk_1/cancelled/guest/hash', preparedAt: NOW, deadlineAt: START, round: 0 },
+      delivery: { bookingId: 'bk_1', action: 'cancelled', key: 'booking/bk_1/cancelled/guest/hash', preparedAt: NOW, deadlineAt: START, round: 0 },
     },
     deadlineAt: START, createdAt: NOW, status: 'pending', round: 0, nextAttemptAt: NOW,
     dispatchAfter: 0, leaseToken: null, leaseExpiresAt: null, firstAttemptAt: null,

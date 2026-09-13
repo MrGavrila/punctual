@@ -46,6 +46,8 @@ async function deliveryMetadata(
 ): Promise<EmailDeliveryMetadata> {
   const recipientHash = (await ports.crypto.hash(recipient.trim().toLowerCase())).slice(0, 16)
   return {
+    bookingId: booking.id,
+    action,
     key: `booking/${booking.id}/${action}/${audience}/${recipientHash}`,
     preparedAt,
     deadlineAt,
