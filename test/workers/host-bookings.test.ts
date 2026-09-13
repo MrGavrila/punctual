@@ -252,12 +252,11 @@ async function bookingRow(id: string): Promise<{ status: string; rescheduled_to:
     .first<{ status: string; rescheduled_to: string | null; reschedule_of: string | null }>()
 }
 
-function emailsTo(address: string): Array<{ subject: string; text: string }> {
-  const out: Array<{ subject: string; text: string }> = []
-  for (const m of sent) {
-    if (m.kind === 'email' && m.message.to === address) out.push({ subject: m.message.subject, text: m.message.text })
-  }
-  return out
+async function deliveryRows(bookingId: string): Promise<Array<{ id: string; kind: string; payload_json: string }>> {
+  const result = await db.prepare(
+    'SELECT id, kind, payload_json FROM booking_delivery_tasks WHERE booking_id = ? ORDER BY id',
+  ).bind(bookingId).all<{ id: string; kind: string; payload_json: string }>()
+  return result.results
 }
 
 beforeAll(async () => {
@@ -413,7 +412,7 @@ describe('booking page', () => {
 })
 
 describe('cancel', () => {
-  it('cancels, releases the slot, enqueues the calendar delete, and mails the guest the note', async () => {
+  it('atomically records and dispatches cancellation mail plus calendar cleanup', async () => {
     const cookie = await seedSession(ALICE_ID)
     const csrf = await csrfFrom(`/dashboard/bookings/${B_UP}`, cookie)
     const res = await post(`/dashboard/bookings/${B_UP}/cancel`, { csrf, note: 'Something came up, sorry for the short notice.' }, cookie)
@@ -421,9 +420,19 @@ describe('cancel', () => {
     expect(res.headers.get('location')).toBe(`/dashboard/bookings/${B_UP}?cancelled=1`)
 
     expect((await bookingRow(B_UP))?.status).toBe('cancelled')
-    expect(sent).toContainEqual({ kind: 'calendar.sync', bookingId: B_UP, action: 'delete' })
+    const rows = await deliveryRows(B_UP)
+    expect(rows.map((row) => [row.id, row.kind])).toEqual([
+      [`booking/${B_UP}/cancelled/calendar-delete`, 'calendar_delete'],
+      [`booking/${B_UP}/cancelled/guest`, 'email'],
+      [`booking/${B_UP}/cancelled/host`, 'email'],
+    ])
+    expect(sent).toEqual([
+      { kind: 'delivery.task', taskId: `booking/${B_UP}/cancelled/guest`, round: 0 },
+      { kind: 'delivery.task', taskId: `booking/${B_UP}/cancelled/host`, round: 0 },
+      { kind: 'delivery.task', taskId: `booking/${B_UP}/cancelled/calendar-delete`, round: 0 },
+    ])
 
-    const [guestMail] = emailsTo('grace@example.test')
+    const guestMail = JSON.parse(rows.find((row) => row.id.endsWith('/guest'))!.payload_json) as { subject: string; text: string }
     expect(guestMail?.subject).toContain('Cancelled')
     expect(guestMail?.text).toContain('Alice Host cancelled Intro call and wrote: “Something came up, sorry for the short notice.”')
 
@@ -488,7 +497,13 @@ describe('reschedule', () => {
     expect(fresh?.reschedule_of).toBe(B_MOVE)
 
     expect(sent).toContainEqual({ kind: 'calendar.sync', bookingId: newId, action: 'create', manageToken: `tok_${newId}` })
-    expect(sent).toContainEqual({ kind: 'calendar.sync', bookingId: B_MOVE, action: 'delete' })
+    expect(sent).toContainEqual({ kind: 'delivery.task', taskId: `booking/${B_MOVE}/rescheduled:${newId}/calendar-delete`, round: 0 })
+    expect(await deliveryRows(B_MOVE)).toEqual([
+      expect.objectContaining({
+        id: `booking/${B_MOVE}/rescheduled:${newId}/calendar-delete`,
+        kind: 'calendar_delete',
+      }),
+    ])
 
     const page = await (await get(location, cookie)).text()
     expect(page).toContain('Booking moved. The guest has been emailed the new time.')

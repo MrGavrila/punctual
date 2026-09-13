@@ -1142,6 +1142,14 @@ describe('POST /bookings', () => {
     })
     expect(cancelled.status).toBe(200)
     expect(((await cancelled.json()) as { data: { status: string } }).data.status).toBe('cancelled')
+    const effects = await env.DB.prepare(
+      'SELECT kind, audience, status FROM booking_delivery_tasks WHERE booking_id = ? ORDER BY id',
+    ).bind(id).all<{ kind: string; audience: string | null; status: string }>()
+    expect(effects.results).toEqual([
+      { kind: 'calendar_delete', audience: null, status: 'pending' },
+      { kind: 'email', audience: 'guest', status: 'pending' },
+      { kind: 'email', audience: 'host', status: 'pending' },
+    ])
 
     // Cancelling releases the slot_locks rows in the same batch, so the time is
     // immediately offered again.
@@ -1485,6 +1493,14 @@ describe('MCP server', () => {
       arguments: { bookingId: bookedText.bookingId },
     })
     expect(cancelled.body.result?.['isError']).toBeUndefined()
+    const effects = await env.DB.prepare(
+      'SELECT kind, audience, status FROM booking_delivery_tasks WHERE booking_id = ? ORDER BY id',
+    ).bind(bookedText.bookingId).all<{ kind: string; audience: string | null; status: string }>()
+    expect(effects.results).toEqual([
+      { kind: 'calendar_delete', audience: null, status: 'pending' },
+      { kind: 'email', audience: 'guest', status: 'pending' },
+      { kind: 'email', audience: 'host', status: 'pending' },
+    ])
   })
 
   it('reports protocol faults with JSON-RPC error codes', async () => {

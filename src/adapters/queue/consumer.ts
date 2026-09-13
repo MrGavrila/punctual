@@ -13,15 +13,27 @@ import { calendarDescription, calendarTitle, participantsFor, type Participant }
 import { hostSettings } from '../../core/domain/hosts.js'
 import { CalendarApiError, needsReconnect } from '../oauth.js'
 import { notifyBookingCreated, notifyBookingRescheduled } from '../notify.js'
+import { EmailDeliveryError } from '../email/index.js'
+import { executeDeliveryTask } from '../delivery-recovery.js'
 
 // Attempts happen at t=0, 2m, 5m, 30m and 2h. Values are the delay from
 // each failed delivery to the next one, not absolute times from the booking.
 const CALENDAR_CREATE_RETRY_DELAYS_SECONDS = [120, 180, 1_500, 5_400] as const
+const MINUTE = 60_000
+const EMAIL_RETRY_OFFSETS_MS = [0, 2 * MINUTE, 10 * MINUTE, 30 * MINUTE, 120 * MINUTE] as const
+const EMAIL_FINAL_GRACE_MS = 5 * MINUTE
 
 class RetryableCalendarSyncError extends Error {
-  constructor() {
+  constructor(readonly retryable = true) {
     super('calendar synchronization requires another attempt')
     this.name = 'RetryableCalendarSyncError'
+  }
+}
+
+class DelayedQueueRetryError extends Error {
+  constructor(readonly delaySeconds: number, options?: ErrorOptions) {
+    super('queue replacement publication requires a delayed retry', options)
+    this.name = 'DelayedQueueRetryError'
   }
 }
 
@@ -36,7 +48,12 @@ export async function handleQueueBatch(batch: MessageBatch, ports: EnginePorts):
       // Retry individually: one bad webhook endpoint must not hold up
       // everyone else's confirmation emails.
       console.error('[punctual] queue message failed', err)
+      if (err instanceof RetryableCalendarSyncError && !err.retryable) {
+        message.ack()
+        continue
+      }
       const delaySeconds = err instanceof ConfirmationBusyError ? 300 :
+        err instanceof DelayedQueueRetryError ? err.delaySeconds :
         err instanceof RetryableCalendarSyncError
           ? CALENDAR_CREATE_RETRY_DELAYS_SECONDS[message.attempts - 1]
           : undefined
@@ -54,7 +71,17 @@ export async function handleOne(
 ): Promise<void> {
   switch (msg.kind) {
     case 'email':
-      await ports.email.send(msg.message)
+      await deliverEmail(msg, ports)
+      return
+
+    case 'delivery.task':
+      await executeDeliveryTask(msg.taskId, msg.round, ports, {
+        deleteCalendar: (bookingId) => syncCalendar(
+          { kind: 'calendar.sync', bookingId, action: 'delete' },
+          ports,
+          0,
+        ),
+      })
       return
 
     case 'webhook':
@@ -397,12 +424,110 @@ async function syncCalendar(
   }
 }
 
+async function deliverEmail(
+  msg: Extract<QueueMessage, { kind: 'email' }>,
+  ports: EnginePorts,
+): Promise<void> {
+  const delivery = msg.message.delivery
+  if (!delivery) {
+    await ports.email.send(msg.message)
+    return
+  }
+  if (!Number.isInteger(delivery.round) || delivery.round < 0 || delivery.round >= EMAIL_RETRY_OFFSETS_MS.length) {
+    console.error('[punctual] booking email not sent: invalid retry round')
+    return
+  }
+
+  const now = ports.clock.now()
+  const finalStart = delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[EMAIL_RETRY_OFFSETS_MS.length - 1]!
+  if (now >= delivery.deadlineAt || now > finalStart + EMAIL_FINAL_GRACE_MS) {
+    console.error('[punctual] booking email not sent: delivery window expired')
+    return
+  }
+
+  const scheduledAt = delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[delivery.round]!
+  if (now < scheduledAt) {
+    await requeueEmail(msg, delivery.round, scheduledAt, ports)
+    return
+  }
+
+  // A stale message can surface after one or more absolute targets. Do not
+  // replay each missed round in a burst. An exact target may execute now;
+  // otherwise arrange the first future target.
+  let latestDueRound = delivery.round
+  for (let round = delivery.round + 1; round < EMAIL_RETRY_OFFSETS_MS.length; round += 1) {
+    if (delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[round]! <= now) latestDueRound = round
+  }
+  if (latestDueRound > delivery.round && delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[latestDueRound]! < now) {
+    const nextRound = nextEmailRound(delivery.preparedAt, now, latestDueRound)
+    if (nextRound !== null) await requeueEmail(msg, nextRound, delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[nextRound]!, ports)
+    else console.error('[punctual] booking email not sent: retry rounds exhausted')
+    return
+  }
+
+  const effectiveRound = latestDueRound
+  try {
+    await ports.email.send({
+      ...msg.message,
+      delivery: { ...delivery, round: effectiveRound },
+    })
+  } catch (err) {
+    const retryable = !(err instanceof EmailDeliveryError) || err.retryable
+    if (!retryable) {
+      console.error('[punctual] booking email rejected permanently', {
+        status: err instanceof EmailDeliveryError ? err.status : undefined,
+      })
+      return
+    }
+
+    const nextRound = nextEmailRound(delivery.preparedAt, now, effectiveRound)
+    if (nextRound === null) {
+      console.error('[punctual] booking email not sent: retry rounds exhausted')
+      return
+    }
+    const nextAt = delivery.preparedAt + EMAIL_RETRY_OFFSETS_MS[nextRound]!
+    if (nextAt >= delivery.deadlineAt || nextAt > finalStart + EMAIL_FINAL_GRACE_MS) {
+      console.error('[punctual] booking email not sent: next retry exceeds delivery window')
+      return
+    }
+    await requeueEmail(msg, nextRound, nextAt, ports)
+  }
+}
+
+function nextEmailRound(preparedAt: number, now: number, afterRound: number): number | null {
+  for (let round = afterRound + 1; round < EMAIL_RETRY_OFFSETS_MS.length; round += 1) {
+    if (preparedAt + EMAIL_RETRY_OFFSETS_MS[round]! > now) return round
+  }
+  return null
+}
+
+async function requeueEmail(
+  msg: Extract<QueueMessage, { kind: 'email' }>,
+  round: number,
+  scheduledAt: number,
+  ports: EnginePorts,
+): Promise<void> {
+  const delivery = msg.message.delivery!
+  const delaySeconds = Math.max(1, Math.ceil((scheduledAt - ports.clock.now()) / 1_000))
+  try {
+    await ports.queue.send({
+      ...msg,
+      message: { ...msg.message, delivery: { ...delivery, round } },
+    }, { delaySeconds })
+  } catch (cause) {
+    // Preserve the same bounded schedule through the queue's native retry
+    // when publishing a replacement message is unavailable.
+    throw new DelayedQueueRetryError(delaySeconds, { cause })
+  }
+}
+
 /** Delete known and possibly committed events; retain failed work for redelivery/DLQ. */
 async function removeCalendarEvents(booking: Booking, repos: Repositories, ports: EnginePorts): Promise<void> {
   const targets = await repos.bookings.calendarTargets(booking.id)
   const ids = { ...booking.externalEventIds }
   const connections = new Set([...Object.keys(ids), ...targets.map((t) => t.connectionId)])
   let failed = false
+  let permanentFailure = false
   for (const connectionId of connections) {
     const target = targets.find((t) => t.connectionId === connectionId)
     try {
@@ -426,11 +551,12 @@ async function removeCalendarEvents(booking: Booking, repos: Repositories, ports
       // above; ambiguous Google targets can safely be deleted again.
     } catch (err) {
       failed = true
+      if (!isRetryableCalendarError(err)) permanentFailure = true
       console.error(`[punctual] calendar cleanup failed for connection ${connectionId}`, err)
       if (needsReconnect(err)) await repos.connections.updateSyncStatus(connectionId, 'needs_reconnect').catch(() => {})
     }
   }
-  if (failed) throw new RetryableCalendarSyncError()
+  if (failed) throw new RetryableCalendarSyncError(!permanentFailure)
 }
 
 function isRetryableCalendarError(err: unknown): boolean {

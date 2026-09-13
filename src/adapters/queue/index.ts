@@ -19,8 +19,8 @@ export interface InlineHandler {
 export function createQueueAdapter(queue: Queue | undefined, inline?: InlineHandler): QueuePort {
   if (queue) {
     return {
-      async send(message) {
-        await queue.send(message)
+      async send(message, options) {
+        await queue.send(message, options)
       },
       async sendBatch(messages) {
         if (messages.length === 0) return
@@ -30,7 +30,8 @@ export function createQueueAdapter(queue: Queue | undefined, inline?: InlineHand
   }
 
   return {
-    async send(message) {
+    async send(message, options) {
+      if (options?.delaySeconds) throw new Error('delayed queue delivery is unavailable')
       if (inline) await inline(message)
       else console.warn('[punctual] no queue bound and no inline handler; dropping', message.kind)
     },

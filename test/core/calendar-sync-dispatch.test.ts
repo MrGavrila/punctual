@@ -779,6 +779,27 @@ describe('calendar create retry schedule', () => {
     ])
   })
 
+  it('acknowledges a permanent calendar deletion rejection instead of retrying forever', async () => {
+    const h = harness({
+      bookingPatch: {
+        status: 'cancelled',
+        cancelledAt: Date.UTC(2026, 8, 1),
+        externalEventIds: { conn_1: 'evt_1' },
+      },
+    })
+    h.deleteEvent.mockRejectedValue(new CalendarApiError('google', 'events.delete rejected', { status: 400 }))
+    const ack = vi.fn()
+    const retry = vi.fn()
+
+    await handleQueueBatch(
+      { messages: [{ body: { ...h.sync, action: 'delete' }, attempts: 1, ack, retry }] } as unknown as MessageBatch,
+      h.ports,
+    )
+
+    expect(ack).toHaveBeenCalledOnce()
+    expect(retry).not.toHaveBeenCalled()
+  })
+
   it('retains a discovered event id if cancellation cleanup fails during creation', async () => {
     const h = harness()
     h.createEvent.mockImplementation(async () => {

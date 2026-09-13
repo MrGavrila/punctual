@@ -402,6 +402,30 @@ export const slugClaims = sqliteTable('slug_claims', {
   createdAt: integer('created_at').notNull(),
 })
 
+export const bookingDeliveryTasks = sqliteTable(
+  'booking_delivery_tasks',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id').notNull(),
+    actionVersion: text('action_version').notNull(),
+    audience: text('audience'),
+    kind: text('kind').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    status: text('status').notNull().default('pending'),
+    round: integer('round').notNull().default(0),
+    nextAttemptAt: integer('next_attempt_at').notNull(),
+    deadlineAt: integer('deadline_at'),
+    dispatchAfter: integer('dispatch_after').notNull().default(0),
+    leaseToken: text('lease_token'),
+    leaseExpiresAt: integer('lease_expires_at'),
+    firstAttemptAt: integer('first_attempt_at'),
+    completedAt: integer('completed_at'),
+    errorCategory: text('error_category'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('booking_delivery_tasks_due_idx').on(t.status, t.nextAttemptAt, t.dispatchAfter, t.createdAt)],
+)
+
 export const schema = {
   users,
   teams,
@@ -421,6 +445,7 @@ export const schema = {
   rrAssignments,
   instanceSettings,
   slugClaims,
+  bookingDeliveryTasks,
 }
 
 export const CURRENT_TIMESTAMP = sql`(unixepoch() * 1000)`

@@ -7,6 +7,7 @@
  */
 
 import type { EnginePorts } from '../ports.js'
+import { recoverDueDeliveryTasks } from './delivery-recovery.js'
 
 const MINUTE = 60_000
 const HOUR = 3_600_000
@@ -17,6 +18,7 @@ export async function runScheduledTasks(ports: EnginePorts, now: number): Promis
     ['expire-holds', expireHolds(ports, now)],
     ['prune-locks', pruneLocks(ports, now)],
     ['reminders', sendReminders(ports, now)],
+    ['delivery-recovery', recoverDueDeliveryTasks(ports, now, 5)],
   ]
   if (ports.config.telemetryEnabled) tasks.push(['telemetry', sendTelemetry(ports, now)])
 

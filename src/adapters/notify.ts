@@ -13,7 +13,7 @@
  */
 
 import type { Booking, EventType, User, WebhookEvent } from '../core/domain/types.js'
-import type { EnginePorts, QueueMessage } from '../ports.js'
+import type { DeliveryTaskDraft, EmailDeliveryMetadata, EmailMessage, EnginePorts, QueueMessage } from '../ports.js'
 import { calendarDescription, calendarTitle, participantsFor } from '../core/domain/calendar-text.js'
 import { hostSettings } from '../core/domain/hosts.js'
 import {
@@ -32,6 +32,26 @@ import {
 
 /** A booking known to have no predecessor gets an empty chain, not `undefined`. */
 const NO_CHAIN: ReadonlyMap<string, Booking> = new Map()
+
+type BookingEmailAction = 'confirmed' | 'rescheduled' | 'cancelled'
+
+async function deliveryMetadata(
+  ports: EnginePorts,
+  booking: Booking,
+  action: BookingEmailAction,
+  audience: 'guest' | 'host',
+  recipient: string,
+  preparedAt: number,
+  deadlineAt: number,
+): Promise<EmailDeliveryMetadata> {
+  const recipientHash = (await ports.crypto.hash(recipient.trim().toLowerCase())).slice(0, 16)
+  return {
+    key: `booking/${booking.id}/${action}/${audience}/${recipientHash}`,
+    preparedAt,
+    deadlineAt,
+    round: 0,
+  }
+}
 
 /** The organizer owns the invitation; do not invite that address a second time. */
 function invitationAttendees(booking: Booking, host: User, hosts: User[] = [host]) {
@@ -141,6 +161,10 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
     ...(hostSynced ? { calendarSynced: true } : {}),
     ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
   })
+  const [guestDelivery, hostDelivery] = await Promise.all([
+    deliveryMetadata(ports, booking, 'confirmed', 'guest', booking.guestEmail, booking.createdAt, booking.startUtc),
+    deliveryMetadata(ports, booking, 'confirmed', 'host', host.email, booking.createdAt, booking.startUtc),
+  ])
 
   // Sent independently rather than as one batch: a batch is atomic, so an
   // oversized or malformed host message would take the guest's confirmation
@@ -155,6 +179,7 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
           subject: guest.subject,
           html: guest.html,
           text: guest.text,
+          delivery: guestDelivery,
           ...(attachments ? { attachments } : {}),
         },
       }),
@@ -166,6 +191,7 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
+          delivery: hostDelivery,
           ...(hostAttachments ? { attachments: hostAttachments } : {}),
           replyTo: booking.guestEmail,
         },
@@ -352,7 +378,7 @@ function base64(text: string): string {
  * guest-facing page told the reader "the host is notified", which was simply
  * untrue on that path.
  */
-export async function notifyBookingCancelled(ctx: {
+export interface BookingCancellationContext {
   ports: EnginePorts
   booking: Booking
   eventType: EventType
@@ -367,7 +393,11 @@ export async function notifyBookingCancelled(ctx: {
   actor?: User
   /** A note to the guest, quoted in the email and attributed to whoever cancelled. */
   reason?: string
-}): Promise<void> {
+}
+
+export async function prepareBookingCancellationEmails(
+  ctx: BookingCancellationContext,
+): Promise<{ guest: EmailMessage; host: EmailMessage }> {
   const { ports, booking, eventType, host } = ctx
   const shared = {
     booking,
@@ -391,35 +421,89 @@ export async function notifyBookingCancelled(ctx: {
     ports, booking, eventType, host, ctx.hosts, 'CANCEL',
   )
   const hostAttachments = (await hostHasSyncedCalendarEvent(ports, booking, host)) ? undefined : attachments
+  const preparedAt = booking.cancelledAt ?? ports.clock.now()
+  const [guestDelivery, hostDelivery] = await Promise.all([
+    deliveryMetadata(ports, booking, 'cancelled', 'guest', booking.guestEmail, preparedAt, booking.startUtc),
+    deliveryMetadata(ports, booking, 'cancelled', 'host', host.email, preparedAt, booking.startUtc),
+  ])
 
+  return {
+    guest: {
+      to: booking.guestEmail,
+      toName: booking.guestName,
+      subject: guest.subject,
+      html: guest.html,
+      text: guest.text,
+      delivery: guestDelivery,
+      ...(attachments ? { attachments } : {}),
+    },
+    host: {
+      to: host.email,
+      toName: host.name || host.slug,
+      subject: hostMail.subject,
+      html: hostMail.html,
+      text: hostMail.text,
+      delivery: hostDelivery,
+      ...(hostAttachments ? { attachments: hostAttachments } : {}),
+    },
+  }
+}
+
+export function calendarDeleteDeliveryTask(
+  bookingId: string,
+  actionVersion: string,
+  createdAt: number,
+): DeliveryTaskDraft {
+  return {
+    id: `booking/${bookingId}/${actionVersion}/calendar-delete`,
+    bookingId,
+    actionVersion,
+    audience: null,
+    kind: 'calendar_delete',
+    payload: { bookingId },
+    deadlineAt: null,
+    createdAt,
+  }
+}
+
+export async function prepareCancellationDeliveryTasks(
+  ctx: BookingCancellationContext,
+): Promise<DeliveryTaskDraft[]> {
+  const preparedAt = ctx.booking.cancelledAt ?? ctx.ports.clock.now()
+  const messages = await prepareBookingCancellationEmails(ctx)
+  return [
+    {
+      id: `booking/${ctx.booking.id}/cancelled/guest`,
+      bookingId: ctx.booking.id,
+      actionVersion: 'cancelled',
+      audience: 'guest',
+      kind: 'email',
+      payload: messages.guest,
+      deadlineAt: ctx.booking.startUtc,
+      createdAt: preparedAt,
+    },
+    {
+      id: `booking/${ctx.booking.id}/cancelled/host`,
+      bookingId: ctx.booking.id,
+      actionVersion: 'cancelled',
+      audience: 'host',
+      kind: 'email',
+      payload: messages.host,
+      deadlineAt: ctx.booking.startUtc,
+      createdAt: preparedAt,
+    },
+    calendarDeleteDeliveryTask(ctx.booking.id, 'cancelled', preparedAt),
+  ]
+}
+
+export async function notifyBookingCancelled(ctx: BookingCancellationContext): Promise<void> {
+  const messages = await prepareBookingCancellationEmails(ctx)
   await Promise.all([
-    ports.queue
-      .send({
-        kind: 'email',
-        message: {
-          to: booking.guestEmail,
-          toName: booking.guestName,
-          subject: guest.subject,
-          html: guest.html,
-          text: guest.text,
-          ...(attachments ? { attachments } : {}),
-        },
-      })
+    ctx.ports.queue.send({ kind: 'email', message: messages.guest })
       .catch((err) => console.error('[punctual] guest cancellation failed to queue', err)),
-    ports.queue
-      .send({
-        kind: 'email',
-        message: {
-          to: host.email,
-          toName: host.name || host.slug,
-          subject: hostMail.subject,
-          html: hostMail.html,
-          text: hostMail.text,
-          ...(hostAttachments ? { attachments: hostAttachments } : {}),
-        },
-      })
+    ctx.ports.queue.send({ kind: 'email', message: messages.host })
       .catch((err) => console.error('[punctual] host cancellation failed to queue', err)),
-    notifyWebhooks(ports, 'booking.cancelled', booking, eventType),
+    notifyWebhooks(ctx.ports, 'booking.cancelled', ctx.booking, ctx.eventType),
   ])
 }
 
@@ -479,6 +563,11 @@ export async function notifyBookingRescheduled(ctx: {
     ...(hostSynced ? { calendarSynced: true } : {}),
     ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
   })
+  const deadlineAt = Math.min(ctx.previous.startUtc, booking.startUtc)
+  const [guestDelivery, hostDelivery] = await Promise.all([
+    deliveryMetadata(ports, booking, 'rescheduled', 'guest', booking.guestEmail, booking.createdAt, deadlineAt),
+    deliveryMetadata(ports, booking, 'rescheduled', 'host', host.email, booking.createdAt, deadlineAt),
+  ])
 
   const enqueue = ctx.enqueueConfirmation ?? ((_audience, message) => ports.queue.send(message))
   await settleNotifications([
@@ -490,6 +579,7 @@ export async function notifyBookingRescheduled(ctx: {
           subject: guest.subject,
           html: guest.html,
           text: guest.text,
+          delivery: guestDelivery,
           ...(attachments ? { attachments } : {}),
         },
       }),
@@ -501,6 +591,7 @@ export async function notifyBookingRescheduled(ctx: {
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
+          delivery: hostDelivery,
           replyTo: booking.guestEmail,
           ...(hostAttachments ? { attachments: hostAttachments } : {}),
         },

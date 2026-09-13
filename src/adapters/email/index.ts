@@ -21,6 +21,23 @@ export interface ResendOptions {
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 
+/** Provider-safe classification used by the bounded queue recovery policy. */
+export class EmailDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly status?: number,
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'EmailDeliveryError'
+  }
+}
+
+function resendStatusIsRetryable(status: number): boolean {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500
+}
+
 export function createResendSender(opts: ResendOptions): EmailSender {
   return {
     async send(message) {
@@ -42,20 +59,30 @@ export function createResendSender(opts: ResendOptions): EmailSender {
         }))
       }
 
-      const res = await fetch(RESEND_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${opts.apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      })
+      let res: Response
+      try {
+        res = await fetch(RESEND_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${opts.apiKey}`,
+            'content-type': 'application/json',
+            ...(message.delivery ? { 'Idempotency-Key': message.delivery.key } : {}),
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(20_000),
+        })
+      } catch (cause) {
+        throw new EmailDeliveryError('resend: network request failed', true, undefined, { cause })
+      }
 
       if (!res.ok) {
-        // Status and body both, because Resend puts the actionable part
-        // (unverified domain, invalid recipient) only in the body.
-        const detail = await res.text().catch(() => '')
-        throw new Error(`resend: ${res.status} ${res.statusText} ${detail}`.trim())
+        // The response body can contain addresses or provider details. Keep it
+        // out of logs and use only the status for retry classification.
+        throw new EmailDeliveryError(
+          `resend: ${res.status} ${res.statusText}`.trim(),
+          resendStatusIsRetryable(res.status),
+          res.status,
+        )
       }
     },
   }

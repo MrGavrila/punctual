@@ -29,7 +29,12 @@
 
 import { Hono } from 'hono'
 import { isValidEmail } from '../../core/domain/booking-service.js'
-import { notifyBookingCancelled } from '../../adapters/notify.js'
+import {
+  calendarDeleteDeliveryTask,
+  notifyWebhooks,
+  prepareCancellationDeliveryTasks,
+} from '../../adapters/notify.js'
+import { dispatchDeliveryTask } from '../../adapters/delivery-recovery.js'
 import { dispatchConfirmation } from '../../adapters/queue/consumer.js'
 import { z } from 'zod'
 import type { EnginePorts, RequestScope } from '../../ports.js'
@@ -751,7 +756,12 @@ async function rescheduleBooking(
   // original booking can win between the read above and here. If it did, the
   // booking `coordinator.book` just created is a real, confirmed, but
   // orphaned duplicate — release it rather than leave it live.
-  const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id)
+  const cleanup = calendarDeleteDeliveryTask(
+    original.id,
+    `rescheduled:${outcome.booking.id}`,
+    deps.ports.clock.now(),
+  )
+  const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id, [cleanup])
   if (!moved) {
     await repos.bookings.cancelWithLockRelease(outcome.booking.id, deps.ports.clock.now())
     await deps.ports.queue
@@ -759,9 +769,9 @@ async function rescheduleBooking(
       .catch(() => {})
     return toolError('That booking was already updated elsewhere. Fetch it again before retrying.')
   }
-  await deps.ports.queue
-    .send({ kind: 'calendar.sync', bookingId: original.id, action: 'delete' })
-    .catch(() => {})
+  await dispatchDeliveryTask(cleanup.id, deps.ports).catch((err) =>
+    console.error('[punctual] mcp reschedule cleanup dispatch failed', err),
+  )
 
   // An agent moving a meeting must not do it silently — the humans involved
   // learn about it only from this mail. Host resolved from the NEW booking,
@@ -823,33 +833,32 @@ async function cancelBooking(deps: ToolDeps, input: z.infer<typeof cancelArgs>):
   }
 
   const cancelledAt = deps.ports.clock.now()
-  const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, cancelledAt)
-  if (!cancelled) return toolError('That booking was already updated elsewhere. Fetch it again before retrying.')
-  await deps.ports.queue
-    .send({ kind: 'calendar.sync', bookingId: booking.id, action: 'delete' })
-    .catch(() => {})
-
-  // The tool description promises "notify the guest", and nothing was sending
-  // anything — an agent could cancel a real meeting and the guest would find
-  // out by turning up to it.
+  const cancelledBooking = { ...booking, status: 'cancelled' as const, cancelledAt }
   const cancelEt = await repos.eventTypes.byId(booking.eventTypeId)
   const cancelHost = await repos.users.byId(booking.hostUserId)
-  if (cancelEt && cancelHost) {
-    await notifyBookingCancelled({
-      ports: deps.ports,
-      // Patched, not the pre-write booking: notifyWebhooks serializes
-      // `booking.status` straight into the payload, which would otherwise
-      // report "confirmed" on a `booking.cancelled` event.
-      booking: { ...booking, status: 'cancelled', cancelledAt },
-      eventType: cancelEt,
-      host: cancelHost,
-      cancelledBy: 'host',
-      // The tool's own description promises this lands in the guest's
-      // notification; it was being collected and echoed back to the caller
-      // but never actually passed through.
-      ...(input.reason ? { reason: input.reason } : {}),
-    }).catch((err) => console.error('[punctual] mcp cancellation emails failed', err))
+  const cancelHosts = (await Promise.all(booking.hostUserIds.map((id) => repos.users.byId(id)))).filter(
+    (candidate): candidate is User => candidate !== null,
+  )
+  const tasks = cancelEt && cancelHost
+    ? await prepareCancellationDeliveryTasks({
+        ports: deps.ports,
+        booking: cancelledBooking,
+        eventType: cancelEt,
+        host: cancelHost,
+        ...(cancelHosts.length > 0 ? { hosts: cancelHosts } : {}),
+        cancelledBy: 'host',
+        actor: user,
+        ...(input.reason ? { reason: input.reason } : {}),
+      })
+    : [calendarDeleteDeliveryTask(booking.id, 'cancelled', cancelledAt)]
+  const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, cancelledAt, tasks)
+  if (!cancelled) return toolError('That booking was already updated elsewhere. Fetch it again before retrying.')
+  for (const task of tasks) {
+    await dispatchDeliveryTask(task.id, deps.ports).catch((err) =>
+      console.error('[punctual] mcp cancellation delivery dispatch failed', err),
+    )
   }
+  if (cancelEt) await notifyWebhooks(deps.ports, 'booking.cancelled', cancelledBooking, cancelEt)
 
   return text({
     cancelled: true,

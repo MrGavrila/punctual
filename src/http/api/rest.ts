@@ -43,7 +43,12 @@ import type { SlotService } from '../../engine.js'
 import { authenticateApiKey } from '../../core/domain/auth-flows.js'
 import { parseApiKey } from '../../core/domain/auth-service.js'
 import { effectiveQuestions, isValidEmail, pickDeclaredAnswers, validateAnswers } from '../../core/domain/booking-service.js'
-import { notifyBookingCancelled } from '../../adapters/notify.js'
+import {
+  calendarDeleteDeliveryTask,
+  notifyWebhooks,
+  prepareCancellationDeliveryTasks,
+} from '../../adapters/notify.js'
+import { dispatchDeliveryTask } from '../../adapters/delivery-recovery.js'
 import { dispatchConfirmation } from '../../adapters/queue/consumer.js'
 import { formatInZone, isValidTimeZone, localDateString } from '../../core/time/zone.js'
 
@@ -1073,40 +1078,39 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
     }
 
     const now = ports.clock.now()
+    const cancelledBooking = { ...booking, status: 'cancelled' as const, cancelledAt: now }
+    const eventType = await repos.eventTypes.byId(booking.eventTypeId)
+    const primaryHost = await repos.users.byId(booking.hostUserId)
+    const hosts = (await Promise.all(booking.hostUserIds.map((id) => repos.users.byId(id)))).filter(
+      (candidate): candidate is User => candidate !== null,
+    )
+    const tasks = eventType && primaryHost
+      ? await prepareCancellationDeliveryTasks({
+          ports,
+          booking: cancelledBooking,
+          eventType,
+          host: primaryHost,
+          ...(hosts.length > 0 ? { hosts } : {}),
+          cancelledBy: 'host',
+          actor: user,
+          ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
+        })
+      : [calendarDeleteDeliveryTask(booking.id, 'cancelled', now)]
     // Conditional on the current status: a concurrent request (a racing
     // reschedule, a retried cancel) can change the booking between the read
     // above and this write.
-    const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, now)
+    const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, now, tasks)
     if (!cancelled) {
       const fresh = await repos.bookings.byId(booking.id)
       return problem(409, 'Not cancellable', `This booking is already ${fresh?.status ?? 'no longer confirmed'}.`)
     }
 
-    const eventType = await repos.eventTypes.byId(booking.eventTypeId)
-    if (eventType) {
-      // Shared with the guest-manage and dashboard cancel paths: sends to
-      // BOTH parties with the .ics METHOD:CANCEL, and fires the
-      // `booking.cancelled` webhook. The REST route used to have its own
-      // guest-only, no-webhook, no-.ics helper — this is the same class of
-      // gap already fixed on the other two paths.
-      await notifyBookingCancelled({
-        ports,
-        // Patched, not the pre-write `booking`: notifyWebhooks serializes
-        // `booking.status` straight into the payload, so a `booking.cancelled`
-        // event would otherwise report status "confirmed" — the value it had
-        // before this same request just cancelled it.
-        booking: { ...booking, status: 'cancelled', cancelledAt: now },
-        eventType,
-        host: user,
-        cancelledBy: 'host',
-        ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
-      }).catch((err) => console.error('[punctual] rest cancellation notify failed', err))
+    for (const task of tasks) {
+      await dispatchDeliveryTask(task.id, ports).catch((err) =>
+        console.error('[punctual] rest cancellation delivery dispatch failed', err),
+      )
     }
-    // After the commit, deliberately: a calendar API failing must not undo a
-    // cancellation the caller has already been told about.
-    await ports.queue
-      .send({ kind: 'calendar.sync', bookingId: booking.id, action: 'delete' })
-      .catch(() => {})
+    if (eventType) await notifyWebhooks(ports, 'booking.cancelled', cancelledBooking, eventType)
 
     const updated = await repos.bookings.byId(booking.id)
     return c.json({ data: bookingJson(updated ?? { ...booking, status: 'cancelled', cancelledAt: now }) })
@@ -1157,7 +1161,12 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
     // same original booking can win between the read above and here. If it
     // did, the booking `coordinator.book` just created is a real, confirmed,
     // but orphaned duplicate — release it rather than leave it live.
-    const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id)
+    const cleanup = calendarDeleteDeliveryTask(
+      original.id,
+      `rescheduled:${outcome.booking.id}`,
+      ports.clock.now(),
+    )
+    const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id, [cleanup])
     if (!moved) {
       await repos.bookings.cancelWithLockRelease(outcome.booking.id, ports.clock.now())
       await ports.queue
@@ -1202,9 +1211,9 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
     // does not exist until its calendar event does, and the email body is
     // rendered at enqueue time. The handler branches on `rescheduleOf` to
     // send the rescheduled copy rather than a fresh confirmation.
-    await ports.queue
-      .send({ kind: 'calendar.sync', bookingId: original.id, action: 'delete' })
-      .catch(() => {})
+    await dispatchDeliveryTask(cleanup.id, ports).catch((err) =>
+      console.error('[punctual] rest reschedule cleanup dispatch failed', err),
+    )
 
     return c.json({ data: bookingJson(outcome.booking), meta: { rescheduledFrom: original.id } }, 201)
   })

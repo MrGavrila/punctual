@@ -59,6 +59,7 @@ export interface Repositories {
   webhooks: WebhookRepository
   idempotency: IdempotencyRepository
   settings: SettingsRepository
+  deliveryTasks: DeliveryTaskRepository
 
   /** Counts for the opt-in telemetry ping (ADR-0006 §5). Nothing identifying. */
   telemetryCounts(): Promise<{ users: number; eventTypes: number; bookings: number }>
@@ -308,9 +309,9 @@ export interface BookingRepository {
   dueBetween(from: number, to: number): Promise<Booking[]>
 
   /** @returns false if the booking was no longer `confirmed` — a concurrent cancel/reschedule won the race. */
-  cancelWithLockRelease(bookingId: string, at: number): Promise<boolean>
+  cancelWithLockRelease(bookingId: string, at: number, tasks?: DeliveryTaskDraft[]): Promise<boolean>
   /** @returns false if the booking was no longer `confirmed` — the caller must roll back the new booking it just created. */
-  markRescheduled(bookingId: string, newBookingId: string): Promise<boolean>
+  markRescheduled(bookingId: string, newBookingId: string, tasks?: DeliveryTaskDraft[]): Promise<boolean>
   rotateManageToken(bookingId: string, tokenHash: string): Promise<void>
 
   /**
@@ -607,6 +608,55 @@ export interface EmailMessage {
   text: string
   attachments?: Array<{ filename: string; content: string; contentType: string }>
   replyTo?: string
+  /** Stable identity and bounded retry clock for one logical booking email. */
+  delivery?: EmailDeliveryMetadata
+}
+
+export type DeliveryTaskKind = 'email' | 'calendar_delete'
+export type DeliveryTaskStatus = 'pending' | 'leased' | 'done' | 'skipped' | 'needs_attention'
+
+export interface DeliveryTaskDraft {
+  id: string
+  bookingId: string
+  actionVersion: string
+  audience: 'guest' | 'host' | null
+  kind: DeliveryTaskKind
+  payload: unknown
+  deadlineAt: number | null
+  createdAt: number
+}
+
+export interface DeliveryTask extends DeliveryTaskDraft {
+  status: DeliveryTaskStatus
+  round: number
+  nextAttemptAt: number
+  dispatchAfter: number
+  leaseToken: string | null
+  leaseExpiresAt: number | null
+  firstAttemptAt: number | null
+  completedAt: number | null
+  errorCategory: string | null
+}
+
+export interface DeliveryTaskRepository {
+  byId(id: string): Promise<DeliveryTask | null>
+  due(now: number, limit: number): Promise<DeliveryTask[]>
+  reserveDispatch(id: string, round: number, now: number, recoverAfter: number): Promise<boolean>
+  scheduleDispatchRetry(id: string, currentRound: number, round: number, nextAttemptAt: number, errorCategory: string): Promise<boolean>
+  needsAttentionPending(id: string, round: number, at: number, errorCategory: string): Promise<boolean>
+  claimExecution(id: string, round: number, now: number, leaseToken: string, leaseExpiresAt: number): Promise<DeliveryTask | null>
+  scheduleRetry(id: string, leaseToken: string, round: number, nextAttemptAt: number, errorCategory: string): Promise<boolean>
+  complete(id: string, leaseToken: string, at: number): Promise<boolean>
+  skip(id: string, leaseToken: string, at: number, errorCategory: string): Promise<boolean>
+  needsAttention(id: string, leaseToken: string, at: number, errorCategory: string): Promise<boolean>
+}
+
+export interface EmailDeliveryMetadata {
+  key: string
+  preparedAt: number
+  deadlineAt: number
+  /** Zero-based absolute retry round: 0, 2, 10, 30 or 120 minutes. */
+  round: number
 }
 
 // ---------------------------------------------------------------------------
@@ -721,12 +771,17 @@ export interface Clock {
 // ---------------------------------------------------------------------------
 
 export interface QueuePort {
-  send(message: QueueMessage): Promise<void>
+  send(message: QueueMessage, options?: QueueSendOptions): Promise<void>
   sendBatch(messages: QueueMessage[]): Promise<void>
+}
+
+export interface QueueSendOptions {
+  delaySeconds?: number
 }
 
 export type QueueMessage =
   | { kind: 'email'; message: EmailMessage }
+  | { kind: 'delivery.task'; taskId: string; round: number }
   | { kind: 'webhook'; webhookId: string; event: string; payload: unknown; attempt: number }
   | {
       kind: 'calendar.sync'

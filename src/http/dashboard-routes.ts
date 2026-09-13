@@ -30,7 +30,12 @@
  */
 
 import { Hono, type Context, type MiddlewareHandler } from 'hono'
-import { notifyBookingCancelled, notifyWebhooks } from '../adapters/notify.js'
+import {
+  calendarDeleteDeliveryTask,
+  notifyWebhooks,
+  prepareCancellationDeliveryTasks,
+} from '../adapters/notify.js'
+import { dispatchDeliveryTask } from '../adapters/delivery-recovery.js'
 import { dispatchConfirmation } from '../adapters/queue/consumer.js'
 import type {
   BookingListView,
@@ -2851,36 +2856,37 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     // booking, so treat it the same as the pre-check rather than sending a
     // cancellation for a booking that is actually rescheduled.
     const cancelledAt = ports.clock.now()
-    const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, cancelledAt)
+    const cancelledBooking: Booking = { ...booking, status: 'cancelled', cancelledAt }
+    const eventType = await repos.eventTypes.byId(booking.eventTypeId)
+    const host = await repos.users.byId(booking.hostUserId)
+    const hosts = (await Promise.all([...attendingIds(booking)].map((id) => repos.users.byId(id)))).filter(
+      (u): u is User => u !== null,
+    )
+    const tasks = eventType && host
+      ? await prepareCancellationDeliveryTasks({
+          ports,
+          booking: cancelledBooking,
+          eventType,
+          host,
+          ...(hosts.length > 0 ? { hosts } : {}),
+          cancelledBy: by.cancelledBy,
+          ...(by.actor ? { actor: by.actor } : {}),
+          ...(by.reason ? { reason: by.reason } : {}),
+        })
+      : [calendarDeleteDeliveryTask(booking.id, 'cancelled', cancelledAt)]
+    const cancelled = await repos.bookings.cancelWithLockRelease(booking.id, cancelledAt, tasks)
     if (!cancelled) return false
 
     // Rotate the hash so the link in the guest's inbox stops working. ADR-0005
     // §4 names rotation-on-state-change as THE invalidation mechanism.
     await repos.bookings.rotateManageToken(booking.id, await ports.crypto.hash(ports.crypto.randomToken(32)))
 
-    const eventType = await repos.eventTypes.byId(booking.eventTypeId)
-    const host = await repos.users.byId(booking.hostUserId)
-    if (eventType && host) {
-      const hosts = (await Promise.all([...attendingIds(booking)].map((id) => repos.users.byId(id)))).filter(
-        (u): u is User => u !== null,
+    for (const task of tasks) {
+      await dispatchDeliveryTask(task.id, ports).catch((err) =>
+        console.error('[punctual] cancellation delivery dispatch failed', err),
       )
-      await notifyBookingCancelled({
-        ports,
-        // Patched, not the pre-write booking: notifyWebhooks serializes
-        // `booking.status` straight into the payload, which would otherwise
-        // report "confirmed" on a `booking.cancelled` event.
-        booking: { ...booking, status: 'cancelled', cancelledAt },
-        eventType,
-        host,
-        ...(hosts.length > 0 ? { hosts } : {}),
-        cancelledBy: by.cancelledBy,
-        ...(by.actor ? { actor: by.actor } : {}),
-        ...(by.reason ? { reason: by.reason } : {}),
-      }).catch((err) => console.error('[punctual] cancellation emails failed', err))
     }
-    // After the commit, deliberately: a calendar or mail failure must not
-    // leave a booking the guest believes is cancelled still holding the slot.
-    await ports.queue.send({ kind: 'calendar.sync', bookingId: booking.id, action: 'delete' }).catch(() => {})
+    if (eventType) await notifyWebhooks(ports, 'booking.cancelled', cancelledBooking, eventType)
     return true
   }
 
@@ -2949,7 +2955,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     // the CURRENT status — if it reports no change, another request already
     // moved or cancelled `old`, and the booking just created above is a real,
     // confirmed, but orphaned duplicate. It must be released, not left live.
-    const moved = await repos.bookings.markRescheduled(old.id, outcome.booking.id)
+    const movedAt = ports.clock.now()
+    const cleanup = calendarDeleteDeliveryTask(old.id, `rescheduled:${outcome.booking.id}`, movedAt)
+    const moved = await repos.bookings.markRescheduled(old.id, outcome.booking.id, [cleanup])
     if (!moved) {
       await repos.bookings.cancelWithLockRelease(outcome.booking.id, ports.clock.now())
       await ports.queue
@@ -2999,7 +3007,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     // exist until its calendar event does, and the email body is rendered
     // at enqueue time. The handler branches on `rescheduleOf` to send the
     // rescheduled copy rather than a fresh confirmation.
-    await ports.queue.send({ kind: 'calendar.sync', bookingId: old.id, action: 'delete' }).catch(() => {})
+    await dispatchDeliveryTask(cleanup.id, ports).catch((err) =>
+      console.error('[punctual] reschedule cleanup dispatch failed', err),
+    )
 
     return { ok: true, booking: outcome.booking, ...(outcome.manageToken ? { manageToken: outcome.manageToken } : {}) }
   }

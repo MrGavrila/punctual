@@ -35,6 +35,9 @@ import type {
   AvailabilityRepository,
   BookingRepository,
   CalendarConnectionRepository,
+  DeliveryTask,
+  DeliveryTaskDraft,
+  DeliveryTaskRepository,
   EventTypeHostRepository,
   EventTypeRepository,
   IdempotencyRepository,
@@ -84,6 +87,30 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
   const run = async (sql: string, ...binds: unknown[]): Promise<void> => {
     await q(sql, ...binds).run()
   }
+
+  const deliveryTaskInsert = (
+    task: DeliveryTaskDraft,
+    transitionPredicate: string,
+    transitionBinds: unknown[],
+  ): D1PreparedStatement =>
+    q(
+      `INSERT INTO booking_delivery_tasks
+       (id,booking_id,action_version,audience,kind,payload_json,status,round,next_attempt_at,
+        deadline_at,dispatch_after,created_at)
+       SELECT ?,?,?,?,?,?,'pending',0,?,?,0,?
+       WHERE EXISTS (${transitionPredicate})
+       ON CONFLICT(id) DO NOTHING`,
+      task.id,
+      task.bookingId,
+      task.actionVersion,
+      task.audience,
+      task.kind,
+      JSON.stringify(task.payload),
+      task.createdAt,
+      task.deadlineAt,
+      task.createdAt,
+      ...transitionBinds,
+    )
 
   // -------------------------------------------------------------------------
   // Users
@@ -774,7 +801,7 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
       return rows.map((r) => mapBooking(r)!).filter(Boolean)
     },
 
-    async cancelWithLockRelease(bookingId, at) {
+    async cancelWithLockRelease(bookingId, at, tasks = []) {
       // Conditional on the CURRENT status, not just the id: a cancel racing a
       // concurrent reschedule (two guest tabs, a double-submitted form) must
       // not stomp a booking that a parallel request already moved. Releasing
@@ -786,12 +813,17 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
             "UPDATE bookings SET status = 'cancelled', cancelled_at = ? WHERE id = ? AND status = 'confirmed'",
           )
           .bind(at, bookingId),
+        ...tasks.map((task) => deliveryTaskInsert(
+          task,
+          "SELECT 1 FROM bookings WHERE id = ? AND status = 'cancelled' AND cancelled_at = ?",
+          [bookingId, at],
+        )),
         session.prepare('DELETE FROM slot_locks WHERE booking_id = ?').bind(bookingId),
       ])
       return (results[0]?.meta.changes ?? 0) > 0
     },
 
-    async markRescheduled(bookingId, newBookingId) {
+    async markRescheduled(bookingId, newBookingId, tasks = []) {
       // Same guard as cancel: without `status = 'confirmed'` here, two
       // concurrent reschedules of the same booking can each create a real,
       // confirmed replacement, and this UPDATE would just silently pick
@@ -803,6 +835,11 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
             "UPDATE bookings SET status = 'rescheduled', rescheduled_to = ? WHERE id = ? AND status = 'confirmed'",
           )
           .bind(newBookingId, bookingId),
+        ...tasks.map((task) => deliveryTaskInsert(
+          task,
+          "SELECT 1 FROM bookings WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?",
+          [bookingId, newBookingId],
+        )),
         session.prepare('DELETE FROM slot_locks WHERE booking_id = ?').bind(bookingId),
       ])
       return (results[0]?.meta.changes ?? 0) > 0
@@ -890,6 +927,134 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
 
     async rotateManageToken(bookingId, tokenHash) {
       await run('UPDATE bookings SET manage_token_hash = ? WHERE id = ?', tokenHash, bookingId)
+    },
+  }
+
+  const finishDeliveryTask = async (
+    prepare: typeof q,
+    id: string,
+    leaseToken: string,
+    at: number,
+    status: 'done' | 'skipped' | 'needs_attention',
+    errorCategory: string | null,
+  ): Promise<boolean> => {
+    const result = await prepare(
+      `UPDATE booking_delivery_tasks
+       SET status = ?, completed_at = ?, error_category = ?, lease_token = NULL, lease_expires_at = NULL
+       WHERE id = ? AND status = 'leased' AND lease_token = ?`,
+      status,
+      at,
+      errorCategory,
+      id,
+      leaseToken,
+    ).run()
+    return (result.meta.changes ?? 0) > 0
+  }
+
+  const deliveryTasks: DeliveryTaskRepository = {
+    async byId(id) {
+      return mapDeliveryTask(await first('SELECT * FROM booking_delivery_tasks WHERE id = ?', id))
+    },
+    async due(now, limit) {
+      const rows = await all<Record<string, unknown>>(
+        `SELECT * FROM booking_delivery_tasks
+         WHERE (status = 'pending' AND next_attempt_at <= ? AND dispatch_after <= ?)
+            OR (status = 'leased' AND next_attempt_at <= ? AND lease_expires_at <= ?)
+         ORDER BY next_attempt_at, created_at
+         LIMIT ?`,
+        now,
+        now,
+        now,
+        now,
+        Math.max(0, Math.min(5, limit)),
+      )
+      return rows.map((row) => mapDeliveryTask(row)!).filter(Boolean)
+    },
+    async reserveDispatch(id, round, now, recoverAfter) {
+      const result = await q(
+        `UPDATE booking_delivery_tasks
+         SET status = 'pending', dispatch_after = ?, lease_token = NULL, lease_expires_at = NULL
+         WHERE id = ? AND round = ? AND next_attempt_at <= ?
+           AND ((status = 'pending' AND dispatch_after <= ?)
+             OR (status = 'leased' AND lease_expires_at <= ?))`,
+        recoverAfter,
+        id,
+        round,
+        now,
+        now,
+        now,
+      ).run()
+      return (result.meta.changes ?? 0) > 0
+    },
+    async scheduleDispatchRetry(id, currentRound, round, nextAttemptAt, errorCategory) {
+      const result = await q(
+        `UPDATE booking_delivery_tasks
+         SET round = ?, next_attempt_at = ?, dispatch_after = ?, error_category = ?,
+             lease_token = NULL, lease_expires_at = NULL
+         WHERE id = ? AND status = 'pending' AND round = ?`,
+        round,
+        nextAttemptAt,
+        nextAttemptAt,
+        errorCategory,
+        id,
+        currentRound,
+      ).run()
+      return (result.meta.changes ?? 0) > 0
+    },
+    async needsAttentionPending(id, round, at, errorCategory) {
+      const result = await q(
+        `UPDATE booking_delivery_tasks
+         SET status = 'needs_attention', completed_at = ?, error_category = ?,
+             lease_token = NULL, lease_expires_at = NULL
+         WHERE id = ? AND status = 'pending' AND round = ?`,
+        at,
+        errorCategory,
+        id,
+        round,
+      ).run()
+      return (result.meta.changes ?? 0) > 0
+    },
+    async claimExecution(id, round, now, leaseToken, leaseExpiresAt) {
+      const row = await first<Record<string, unknown>>(
+        `UPDATE booking_delivery_tasks
+         SET status = 'leased', lease_token = ?, lease_expires_at = ?,
+             first_attempt_at = COALESCE(first_attempt_at, ?)
+         WHERE id = ? AND round = ? AND next_attempt_at <= ?
+           AND (status = 'pending' OR (status = 'leased' AND lease_expires_at <= ?))
+         RETURNING *`,
+        leaseToken,
+        leaseExpiresAt,
+        now,
+        id,
+        round,
+        now,
+        now,
+      )
+      return mapDeliveryTask(row)
+    },
+    async scheduleRetry(id, leaseToken, round, nextAttemptAt, errorCategory) {
+      const result = await q(
+        `UPDATE booking_delivery_tasks
+         SET status = 'pending', round = ?, next_attempt_at = ?, dispatch_after = ?,
+             lease_token = NULL, lease_expires_at = NULL, error_category = ?
+         WHERE id = ? AND status = 'leased' AND lease_token = ?`,
+        round,
+        nextAttemptAt,
+        nextAttemptAt,
+        errorCategory,
+        id,
+        leaseToken,
+      ).run()
+      return (result.meta.changes ?? 0) > 0
+    },
+    async complete(id, leaseToken, at) {
+      return finishDeliveryTask(q, id, leaseToken, at, 'done', null)
+    },
+    async skip(id, leaseToken, at, errorCategory) {
+      return finishDeliveryTask(q, id, leaseToken, at, 'skipped', errorCategory)
+    },
+    async needsAttention(id, leaseToken, at, errorCategory) {
+      return finishDeliveryTask(q, id, leaseToken, at, 'needs_attention', errorCategory)
     },
   }
 
@@ -1526,7 +1691,7 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
 
   return {
     users, eventTypes, availability, bookings, slotLocks, teams, eventTypeHosts, connections,
-    sessions, apiKeys, webhooks, idempotency, settings,
+    sessions, apiKeys, webhooks, idempotency, settings, deliveryTasks,
     async telemetryCounts() {
       const row = await first<{ users: number; event_types: number; bookings: number }>(
         `SELECT
@@ -1686,6 +1851,29 @@ function mapBooking(row: Record<string, unknown> | null): Booking | null {
     manageTokenHash: String(row['manage_token_hash']),
     cancelledAt: row['cancelled_at'] == null ? null : Number(row['cancelled_at']),
     createdAt: Number(row['created_at']),
+  }
+}
+
+function mapDeliveryTask(row: Record<string, unknown> | null): DeliveryTask | null {
+  if (!row) return null
+  return {
+    id: String(row['id']),
+    bookingId: String(row['booking_id']),
+    actionVersion: String(row['action_version']),
+    audience: row['audience'] == null ? null : String(row['audience']) as DeliveryTask['audience'],
+    kind: String(row['kind']) as DeliveryTask['kind'],
+    payload: JSON.parse(String(row['payload_json'])),
+    deadlineAt: row['deadline_at'] == null ? null : Number(row['deadline_at']),
+    createdAt: Number(row['created_at']),
+    status: String(row['status']) as DeliveryTask['status'],
+    round: Number(row['round']),
+    nextAttemptAt: Number(row['next_attempt_at']),
+    dispatchAfter: Number(row['dispatch_after']),
+    leaseToken: row['lease_token'] == null ? null : String(row['lease_token']),
+    leaseExpiresAt: row['lease_expires_at'] == null ? null : Number(row['lease_expires_at']),
+    firstAttemptAt: row['first_attempt_at'] == null ? null : Number(row['first_attempt_at']),
+    completedAt: row['completed_at'] == null ? null : Number(row['completed_at']),
+    errorCategory: row['error_category'] == null ? null : String(row['error_category']),
   }
 }
 

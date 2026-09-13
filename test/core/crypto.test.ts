@@ -339,4 +339,40 @@ describe('Resend sender', () => {
     })
     expect(seen.body['to']).toEqual(['"Guest <attacker@evil.com>, Innocent" <g@example.com>'])
   })
+
+  it('passes the stable booking delivery identity to Resend', async () => {
+    const seen = await capture({
+      to: 'g@example.com',
+      subject: 'Booked',
+      html: '<p>Booked</p>',
+      text: 'Booked',
+      delivery: {
+        key: 'booking/bk_1/confirmed/guest',
+        preparedAt: 1_797_000_000_000,
+        deadlineAt: 1_797_003_600_000,
+        round: 0,
+      },
+    })
+
+    expect(seen.headers['Idempotency-Key']).toBe('booking/bk_1/confirmed/guest')
+  })
+
+  it.each([
+    [429, true],
+    [503, true],
+    [400, false],
+    [403, false],
+  ])('classifies Resend status %i for bounded retries', async (status, retryable) => {
+    const { createResendSender } = await import('../../src/adapters/email/index.js')
+    vi.stubGlobal('fetch', (async () => new Response('provider detail', { status })) as typeof globalThis.fetch)
+    const sender = createResendSender({ apiKey: 'test-key', from: 'hello@punctual.sh' })
+
+    const error = await sender
+      .send({ to: 'g@example.com', subject: 'Booked', html: '<p>x</p>', text: 'x' })
+      .then(() => null, (caught: unknown) => caught as { retryable?: boolean; status?: number; message?: string })
+
+    expect(error?.retryable).toBe(retryable)
+    expect(error?.status).toBe(status)
+    expect(error?.message).not.toContain('provider detail')
+  })
 })

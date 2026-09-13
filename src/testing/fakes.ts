@@ -28,6 +28,7 @@ import type {
   BookingListOptions,
   BookingRepository,
   CalendarConnectionRepository,
+  DeliveryTaskRepository,
   EmailMessage,
   EmailSender,
   EngineConfig,
@@ -349,6 +350,7 @@ export function createFakeRepositories(): FakeRepositories {
     sessions: sessionRepo,
     apiKeys: apiKeyRepo,
     bookings: bookingRepo,
+    deliveryTasks: unimplemented<DeliveryTaskRepository>('deliveryTasks'),
     async telemetryCounts() {
       return { users: users.size, eventTypes: 0, bookings: bookings.size }
     },

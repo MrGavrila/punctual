@@ -127,6 +127,10 @@ function fakePorts(
         sent.push(...messages)
       },
     },
+    crypto: {
+      hash: async (value: string) => value === 'ada@example.com' ? 'a'.repeat(64) : 'b'.repeat(64),
+    },
+    clock: { now: () => START - 60_000 },
     config: {
       baseUrl: 'https://punctual.example',
       brandName: 'Punctual',
@@ -203,6 +207,63 @@ describe('notifyBookingCancelled — CANCEL suppressed for a superseded leg', ()
 })
 
 describe('booking notifications — host calendar attachment fallback', () => {
+  it('keeps one stable, recipient-specific delivery identity per booking action', async () => {
+    const first: QueueMessage[] = []
+    const second: QueueMessage[] = []
+    const original = booking()
+    const moved = booking({
+      id: 'bk_2',
+      rescheduleOf: original.id,
+      startUtc: START + 3_600_000,
+      endUtc: START + 5_400_000,
+    })
+
+    await notifyBookingCreated({ ports: fakePorts(first), booking: original, eventType: eventType(), host })
+    await notifyBookingCreated({ ports: fakePorts(second), booking: original, eventType: eventType(), host })
+    await notifyBookingRescheduled({
+      ports: fakePorts(first, { bookings: { [original.id]: original } }),
+      booking: moved,
+      previous: original,
+      eventType: eventType(),
+      host,
+    })
+    await notifyBookingCancelled({
+      ports: fakePorts(first, { bookings: { [original.id]: original } }),
+      booking: { ...moved, status: 'cancelled', cancelledAt: START - 60_000 },
+      eventType: eventType(),
+      host,
+      cancelledBy: 'guest',
+    })
+
+    const firstConfirmation = first.filter((m) => m.kind === 'email').slice(0, 2).map((m) => m.message.delivery)
+    const secondConfirmation = second.filter((m) => m.kind === 'email').map((m) => m.message.delivery)
+    expect(firstConfirmation).toEqual(secondConfirmation)
+    expect(firstConfirmation).toEqual([
+      {
+        key: 'booking/bk_1/confirmed/guest/aaaaaaaaaaaaaaaa',
+        preparedAt: Date.UTC(2026, 7, 10, 12, 0, 0),
+        deadlineAt: START,
+        round: 0,
+      },
+      {
+        key: 'booking/bk_1/confirmed/host/bbbbbbbbbbbbbbbb',
+        preparedAt: Date.UTC(2026, 7, 10, 12, 0, 0),
+        deadlineAt: START,
+        round: 0,
+      },
+    ])
+
+    const later = first.filter((m) => m.kind === 'email').slice(2).map((m) => m.message.delivery)
+    expect(later.map((delivery) => delivery?.key)).toEqual([
+      'booking/bk_2/rescheduled/guest/aaaaaaaaaaaaaaaa',
+      'booking/bk_2/rescheduled/host/bbbbbbbbbbbbbbbb',
+      'booking/bk_2/cancelled/guest/aaaaaaaaaaaaaaaa',
+      'booking/bk_2/cancelled/host/bbbbbbbbbbbbbbbb',
+    ])
+    expect(later.slice(0, 2).map((delivery) => delivery?.deadlineAt)).toEqual([START, START])
+    expect(later.slice(2).map((delivery) => delivery?.preparedAt)).toEqual([START - 60_000, START - 60_000])
+  })
+
   it('keeps one guest ICS identity across creation, reschedule and cancellation without inviting its organizer', async () => {
     const sent: QueueMessage[] = []
     const original = booking({ externalEventIds: { conn_google: 'google_event_1' } })
