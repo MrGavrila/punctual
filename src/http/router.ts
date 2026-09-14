@@ -31,7 +31,6 @@ import { isValidTimeZone, localDateString } from '../core/time/zone.js'
 import {
   bookedConfirmation,
   confirmForm,
-  displayCompany,
   errorPage,
   eventHeader,
   monthGrid,
@@ -40,11 +39,29 @@ import {
   slotList,
   slotTakenPage,
   type BookingPageData,
+  type PageChrome,
   hostsRow,
   joinNames,
 } from './pages/booking.js'
 
 type Env = Record<string, unknown>
+
+const PUBLIC_BOOKING_FAVICON = 'https://kisielowa.com/assets/favicon.svg'
+
+/** Apply the Kisielowa skin only to the public booking journey. */
+function publicBookingHead(chrome: PageChrome): string {
+  return shellHead({
+    ...chrome,
+    bookingTheme: true,
+    themeColor: '#F5F5F5',
+    themeColorDark: '#111111',
+    faviconHref: PUBLIC_BOOKING_FAVICON,
+  })
+}
+
+function publicBookingFoot(embed = false): string {
+  return shellFoot(false, embed)
+}
 
 export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
@@ -328,7 +345,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     }
 
     const head =
-      shellHead({
+      publicBookingHead({
         title: `${eventType.title} · ${team ? (team.showName === false ? ports.config.brandName : team.name) : host.name || host.slug}`,
         description: eventType.description || undefined,
         brandName: ports.config.brandName,
@@ -384,7 +401,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       }
 
       return `${hostsRow(data)}<div class="pu-grid">${monthGrid(data)}${slotList(data)}</div>`
-    }, shellFoot(true, embed, displayCompany(headerData)))
+    }, publicBookingFoot(embed))
   })
 
   // -------------------------------------------------------------------------
@@ -422,11 +439,11 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     }
 
     const html =
-      shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
+      publicBookingHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
       eventHeader(data) +
       hostsRow(data) +
       confirmForm(data, start) +
-      shellFoot(true, embed, displayCompany(data))
+      publicBookingFoot(embed)
     return c.html(html)
   })
 
@@ -441,9 +458,9 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     const limit = await ports.rateLimiter.check('booking:ip', ip, 10, 3600)
     if (!limit.allowed) {
       return c.html(
-        shellHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
+        publicBookingHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
           errorPage('Too many bookings', 'Please wait a little and try again.') +
-          shellFoot(),
+          publicBookingFoot(),
         429,
         { 'retry-after': String(Math.ceil((limit.resetAt - ports.clock.now()) / 1000)) },
       )
@@ -503,7 +520,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
 
     if (Object.keys(errors).length > 0) {
       return c.html(
-        shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
+        publicBookingHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
           eventHeader(data) +
           // `declared` (not raw `answers`): a stale-form submission that
           // posted under the built-in q_agenda key while the event type's
@@ -511,7 +528,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           // THAT id, or confirmForm's `values[q.id]` lookup renders it as
           // empty and the guest's typed text looks lost on the error page.
           confirmForm(data, start, { errors, values: { name, email, ...declared }, holdId }) +
-          shellFoot(true, embed, displayCompany(data)),
+          publicBookingFoot(embed),
         400,
       )
     }
@@ -538,10 +555,10 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           ? slotTakenPage(data, localDateString(start, guestTimezone))
           : errorPage('Could not complete booking', outcome.detail ?? 'Please try another time.')
       return c.html(
-        shellHead({ title: 'Time unavailable', brandName: ports.config.brandName }) +
+        publicBookingHead({ title: 'Time unavailable', brandName: ports.config.brandName }) +
           eventHeader(data) +
           body +
-          shellFoot(true, embed, displayCompany(data)),
+          publicBookingFoot(embed),
         409,
       )
     }
@@ -552,7 +569,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       `${ports.config.baseUrl}/booking/${outcome.booking.id}` +
       (outcome.manageToken ? `?token=${encodeURIComponent(outcome.manageToken)}` : '')
     return c.html(
-      shellHead({ title: 'Booked', brandName: ports.config.brandName }) +
+      publicBookingHead({ title: 'Booked', brandName: ports.config.brandName }) +
         bookedConfirmation({
           eventTitle: eventType.title,
           // Who actually attends — the round-robin pick, or the required
@@ -568,7 +585,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           guestTimezone,
           manageUrl,
         }) +
-        shellFoot(true, embed, displayCompany(data)),
+        publicBookingFoot(embed),
     )
   })
 

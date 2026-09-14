@@ -286,6 +286,10 @@ describe('a fresh page load shows today, not "pick a day"', () => {
       timeZone: 'UTC',
     }).format(new Date(Date.UTC(y!, m! - 1, d!)))
     expect(body).toContain(`<h2>${todayHeader}</h2>`)
+    expect(body).toContain('<body class="pu-booking-theme">')
+    expect(body).toContain('<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">')
+    expect(body).not.toContain('class="pu-foot"')
+    expect(body).not.toContain('punctual<span>:</span>')
   })
 
   /**

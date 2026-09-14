@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EventType, Slot, User } from '../../src/core/domain/types.js'
-import { eventHeader, hostsRow, joinNames, monthGrid, shellFoot, slotList, type BookingPageData } from '../../src/http/pages/booking.js'
+import { eventHeader, hostsRow, joinNames, monthGrid, shellFoot, shellHead, slotList, type BookingPageData } from '../../src/http/pages/booking.js'
 
 const host: User = {
   id: 'u_host',
@@ -191,6 +191,30 @@ describe('shellFoot operator line', () => {
     const html = shellFoot(true, true, null)
     expect(html).toContain('target="_blank"')
     expect(html).toContain('rel="noopener"')
+  })
+})
+
+describe('public booking page chrome', () => {
+  it('scopes the site theme and uses the main site favicon and adaptive browser colour', () => {
+    const html = shellHead({
+      title: 'Book a call',
+      brandName: 'Dr. Kisielowa',
+      bookingTheme: true,
+      themeColor: '#F5F5F5',
+      themeColorDark: '#111111',
+      faviconHref: 'https://kisielowa.com/assets/favicon.svg',
+    })
+    expect(html).toContain('<body class="pu-booking-theme">')
+    expect(html).toContain('<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)">')
+    expect(html).toContain('<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">')
+    expect(html).toContain('<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">')
+  })
+
+  it('leaves the dashboard chrome unchanged when the booking theme is not requested', () => {
+    const html = shellHead({ title: 'Dashboard', brandName: 'Punctual' })
+    expect(html).toContain('<body>')
+    expect(html).not.toContain('<body class="pu-booking-theme">')
+    expect(html).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
   })
 })
 

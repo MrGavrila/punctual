@@ -47,6 +47,12 @@ export interface PageChrome {
   description?: string
   brandName: string
   themeColor?: string
+  /** Optional dark-scheme browser chrome colour; absent keeps the legacy single colour. */
+  themeColorDark?: string
+  /** Public deployments can use their own favicon without changing the dashboard icon. */
+  faviconHref?: string
+  /** Opt-in body class for a deployment-specific public booking theme. */
+  bookingTheme?: boolean
   /**
    * Open Graph / Twitter card. Deliberately opt-in, not automatic: a
    * dashboard or guest-manage page carries a session or a guest's own manage
@@ -75,6 +81,11 @@ export interface PageChrome {
  * Everything before the first data-dependent byte. Flushed immediately.
  */
 export function shellHead(chrome: PageChrome): string {
+  const themeColor = escapeHtml(chrome.themeColor ?? '#0E7C4C')
+  const themeColorMeta = chrome.themeColorDark
+    ? `<meta name="theme-color" content="${themeColor}" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="${escapeHtml(chrome.themeColorDark)}" media="(prefers-color-scheme: dark)">`
+    : `<meta name="theme-color" content="${themeColor}">`
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -83,8 +94,8 @@ export function shellHead(chrome: PageChrome): string {
 <title>${escapeHtml(chrome.title)}</title>
 ${chrome.description ? `<meta name="description" content="${escapeHtml(chrome.description)}">` : ''}
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="${chrome.themeColor ?? '#0E7C4C'}">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${themeColorMeta}
+<link rel="icon" href="${escapeHtml(chrome.faviconHref ?? '/favicon.svg')}" type="image/svg+xml">
 ${
   chrome.canonical
     ? `<link rel="canonical" href="${escapeHtml(chrome.canonical)}">`
@@ -117,7 +128,7 @@ ${chrome.description ? `<meta name="twitter:description" content="${escapeHtml(c
 <link rel="preload" href="/fonts/ibmplexmono-700.woff2" as="font" type="font/woff2" crossorigin>
 <style>${pageCss()}</style>
 </head>
-<body>
+<body${chrome.bookingTheme ? ' class="pu-booking-theme"' : ''}>
 <div class="pu-wrap">`
 }
 

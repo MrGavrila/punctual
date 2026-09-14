@@ -38,4 +38,26 @@ describe('the generated CSS blocks', () => {
       expect({ name, unbalanced: unbalancedComment(css) }).toEqual({ name, unbalanced: false })
     }
   })
+
+  it('adds a scoped Kisielowa booking theme without changing the shared application theme', () => {
+    const css = pageCss()
+    expect(css).toContain('body.pu-booking-theme{')
+    expect(css).toContain('--pu-surface-canvas:#f5f5f5')
+    expect(css).toContain('--pu-surface-raised:#fff')
+    expect(css).toContain('--pu-text-primary:#111')
+    expect(css).toContain('--pu-radius:2px')
+    expect(css).toContain(':root[data-theme="dark"] body.pu-booking-theme{')
+    expect(css).toContain('--pu-surface-canvas:#111')
+    expect(css).toContain('--pu-surface-raised:#1c1c1c')
+    expect(css).toContain('--pu-text-primary:#f5f5f5')
+  })
+
+  it('keeps semantic status colours while making the public booking controls graphite', () => {
+    const css = pageCss()
+    expect(css).toContain('--pu-status-success:#0E7C4C')
+    expect(css).toContain('--pu-green-fill:#333')
+    expect(css).toContain('--pu-green-fill-hover:#111')
+    expect(css).toContain('body.pu-booking-theme .pu-meta .pu-dot{background:#333}')
+    expect(css).toContain('@media(hover:hover) and (pointer:fine)')
+  })
 })

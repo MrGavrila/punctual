@@ -802,8 +802,140 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
 .pu-day-heading:first-of-type{margin-top:.75rem}
 `
 
+/**
+ * Deployment-specific public booking skin. Every selector is rooted at the
+ * opt-in body class so the dashboard, docs and landing page keep Punctual's
+ * own theme. The public booking page deliberately mirrors kisielowa.com's
+ * neutral palette and square geometry while semantic success/danger/warning
+ * colours remain status signals rather than decoration.
+ */
+export const BOOKING_THEME_CSS = `
+body.pu-booking-theme{
+  --pu-paper:#fff;--pu-paper-dim:#eee;--pu-line:#ddd;
+  --pu-ink-950:#111;--pu-ink-900:#222;--pu-ink-700:#333;--pu-ink-500:#555;
+  --pu-green-700:#333;--pu-green-800:#111;--pu-green-tint:#eee;
+  --pu-green-fill:#333;--pu-green-fill-hover:#111;
+  --pu-radius:2px;--pu-radius-lg:2px;--pu-shadow-sm:none;
+  --pu-ring:0 0 0 3px rgba(51,51,51,.22);
+  --pu-surface-canvas:#f5f5f5;--pu-surface-raised:#fff;--pu-surface-sunken:#eee;
+  --pu-text-primary:#111;--pu-text-secondary:#555;--pu-text-muted:#666;--pu-text-disabled:#777;
+  --pu-border-subtle:#ddd;--pu-border-strong:#888;--pu-border-focus:#333;
+  --pu-field-border:#888;--pu-url-bg:#eee;
+  --pu-slot-available-bg:#fff;--pu-slot-available-border:#888;--pu-slot-available-text:#111;
+  --pu-slot-hover-bg:#eee;--pu-slot-hover-border:#333;--pu-slot-hover-text:#111;
+  --pu-slot-selected-bg:#eee;--pu-slot-selected-border:#333;--pu-slot-selected-text:#111;
+  --pu-slot-booked-bg:#eee;--pu-slot-booked-border:#ddd;--pu-slot-booked-text:#777;
+  --pu-slot-past-bg:#f5f5f5;--pu-slot-past-text:#666;
+  --pu-slot-outside-notice-bg:#fff;--pu-slot-outside-notice-border:#ddd;
+  --pu-slot-outside-notice-text:#666;
+  --pu-status-success:#0E7C4C;--pu-status-success-bg:#E4F5EC;
+  --pu-booking-button-text:#fff;
+  --pu-booking-day-hover-bg:#ddd;--pu-booking-day-hover-text:#111;
+  --pu-booking-day-selected-bg:#333;--pu-booking-day-selected-text:#fff;
+}
+
+body.pu-booking-theme h1,
+body.pu-booking-theme h2,
+body.pu-booking-theme h3,
+body.pu-booking-theme .pu-host-name{font-family:var(--pu-font-ui)}
+body.pu-booking-theme .pu-card{box-shadow:none}
+body.pu-booking-theme .pu-meta .pu-dot{background:#333}
+body.pu-booking-theme .pu-btn:not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
+  color:var(--pu-booking-button-text)}
+body.pu-booking-theme .pu-day[aria-disabled="true"]{
+  background:var(--pu-surface-raised);color:var(--pu-text-disabled)}
+body.pu-booking-theme .pu-day[aria-selected="true"]{
+  background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
+body.pu-booking-theme .pu-day[aria-current="date"]{
+  box-shadow:inset 0 0 0 1px var(--pu-surface-raised),inset 0 0 0 3px var(--pu-border-focus)}
+body.pu-booking-theme .pu-tz-wrap{border-color:var(--pu-field-border)}
+
+/* Neutralise sticky touch-hover before re-enabling hover feedback only for
+   devices that actually have a fine pointer. */
+body.pu-booking-theme .pu-btn:hover{background:var(--pu-green-fill);border-color:var(--pu-green-fill)}
+body.pu-booking-theme .pu-btn-ghost:hover{
+  background:none;border-color:var(--pu-field-border);color:var(--pu-text-primary)}
+body.pu-booking-theme .pu-day:hover[data-has-slots="1"]{
+  background:var(--pu-green-tint);color:var(--pu-green-700);transform:none}
+body.pu-booking-theme .pu-day[aria-selected="true"]:hover{
+  background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
+body.pu-booking-theme .pu-slot-available:hover{
+  background:var(--pu-slot-available-bg);border-color:var(--pu-slot-available-border);
+  color:var(--pu-slot-available-text);box-shadow:none;transform:none}
+
+body.pu-booking-theme .pu-day:focus-visible,
+body.pu-booking-theme .pu-slot:focus-visible,
+body.pu-booking-theme .pu-btn:focus-visible{
+  outline:3px solid var(--pu-border-focus);outline-offset:3px}
+body.pu-booking-theme input:focus-visible,
+body.pu-booking-theme select:focus-visible,
+body.pu-booking-theme textarea:focus-visible{
+  outline:3px solid var(--pu-border-focus);outline-offset:2px}
+
+:root[data-theme="dark"] body.pu-booking-theme{
+  --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
+  --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
+  --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
+  --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
+  --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+  --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
+  --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
+  --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
+  --pu-field-border:#888;--pu-url-bg:#2a2a2a;
+  --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
+  --pu-slot-hover-bg:#3a3a3a;--pu-slot-hover-border:#f5f5f5;--pu-slot-hover-text:#fff;
+  --pu-slot-selected-bg:#2a2a2a;--pu-slot-selected-border:#f5f5f5;--pu-slot-selected-text:#f5f5f5;
+  --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
+  --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
+  --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
+  --pu-slot-outside-notice-text:#aaa;
+  --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
+  --pu-booking-button-text:#111;
+  --pu-booking-day-hover-bg:#3a3a3a;--pu-booking-day-hover-text:#fff;
+  --pu-booking-day-selected-bg:#f5f5f5;--pu-booking-day-selected-text:#111;
+}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) body.pu-booking-theme{
+    --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
+    --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
+    --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
+    --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
+    --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+    --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
+    --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
+    --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
+    --pu-field-border:#888;--pu-url-bg:#2a2a2a;
+    --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
+    --pu-slot-hover-bg:#3a3a3a;--pu-slot-hover-border:#f5f5f5;--pu-slot-hover-text:#fff;
+    --pu-slot-selected-bg:#2a2a2a;--pu-slot-selected-border:#f5f5f5;--pu-slot-selected-text:#f5f5f5;
+    --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
+    --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
+    --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
+    --pu-slot-outside-notice-text:#aaa;
+    --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
+    --pu-booking-button-text:#111;
+    --pu-booking-day-hover-bg:#3a3a3a;--pu-booking-day-hover-text:#fff;
+    --pu-booking-day-selected-bg:#f5f5f5;--pu-booking-day-selected-text:#111;
+  }
+}
+
+@media(hover:hover) and (pointer:fine){
+  body.pu-booking-theme .pu-btn:hover{
+    background:var(--pu-green-fill-hover);border-color:var(--pu-green-fill-hover)}
+  body.pu-booking-theme .pu-btn-ghost:hover{
+    background:var(--pu-surface-sunken);border-color:var(--pu-border-strong);color:var(--pu-text-primary)}
+  body.pu-booking-theme .pu-day:hover[data-has-slots="1"]{
+    background:var(--pu-booking-day-hover-bg);color:var(--pu-booking-day-hover-text)}
+  body.pu-booking-theme .pu-day[aria-selected="true"]:hover{
+    background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
+  body.pu-booking-theme .pu-slot-available:hover{
+    background:var(--pu-slot-hover-bg);border-color:var(--pu-slot-hover-border);
+    color:var(--pu-slot-hover-text);box-shadow:none;transform:none}
+}
+`
+
 export function pageCss(): string {
-  return FONT_FACES + TOKENS + BASE_CSS
+  return FONT_FACES + TOKENS + BASE_CSS + BOOKING_THEME_CSS
 }
 
 /**
