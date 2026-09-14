@@ -3,6 +3,7 @@ name = "punctual"
 main = "src/index.ts"
 compatibility_date = "2025-08-23"
 compatibility_flags = ["nodejs_compat"]
+routes = [{ pattern = "book.kisielowa.com", custom_domain = true }]
 
 # The OSS deliverable is one Worker and one D1 (spec §8). Nothing below
 # requires a paid plan; a self-hoster runs `wrangler deploy` and is done.
@@ -22,7 +23,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "punctual"
-database_id = "<the id `wrangler d1 create punctual` printed>"
+database_id = "e55df3ae-cd0c-4562-b6a2-1ab827a7006a"
 migrations_dir = "migrations"
 
 # freeBusy cache (ADR-0006 §1) AND rendered OG card PNGs — two key
@@ -32,7 +33,7 @@ migrations_dir = "migrations"
 # writes users check immediately.
 [[kv_namespaces]]
 binding = "CACHE"
-id = "<the id `wrangler kv namespace create CACHE` printed>"
+id = "0dfcbf2d79fe45509b147115a0462096"
 
 # User-uploaded, durable content — host avatars and team logos.
 # Deliberately its own bucket, not the CACHE namespace above: that KV
@@ -73,25 +74,25 @@ dead_letter_queue = "punctual-tasks-dlq"
 [triggers]
 crons = ["*/5 * * * *"]
 
-# This file is the TEMPLATE a self-hoster edits: replace the two ids above
-# and every value below with your own. (Punctual's own deployment keeps its
-# real values in an untracked wrangler.production.toml and deploys with
-# `wrangler deploy -c wrangler.production.toml` — the values here are never
-# anyone's live infrastructure.)
+# Canonical non-secret production configuration for the MrGavrila/punctual
+# deployment at book.kisielowa.com. Keep credentials in Cloudflare secrets,
+# and reflect any intentional Cloudflare dashboard changes here before the
+# next deployment.
 [vars]
 # Your Worker's public origin — the URL `wrangler deploy` prints, or your
 # custom domain. Used in every link the engine writes into emails and .ics.
-BASE_URL = "https://punctual.YOUR-SUBDOMAIN.workers.dev"
-BRAND_NAME = "Punctual"
+BASE_URL = "https://book.kisielowa.com"
+BRAND_NAME = "Dr. Kisielowa"
 # Optional: the legal entity named on /privacy and /terms (defaults to
 # BRAND_NAME), and a live booking page to embed on your landing page.
-#LEGAL_OPERATOR = "Your Company Ltd"
+LEGAL_OPERATOR = "Irina Kisielowa"
 #DEMO_BOOKING_PATH = "/you/30min"
-FROM_EMAIL = "scheduling@your-domain.example"
-FROM_NAME = "Punctual"
-SUPPORT_EMAIL = "you@your-domain.example"
+FROM_EMAIL = "irina@kisielowa.com"
+FROM_NAME = "Dr. Irina Kisielowa"
+SUPPORT_EMAIL = "irina@kisielowa.com"
 # Off unless explicitly enabled (ADR-0006 §5).
 TELEMETRY_ENABLED = "0"
+SIGNUPS = "closed"
 
 # Secrets — set with `wrangler secret put`, never in this file:
 #   ENCRYPTION_KEY_V1   base64 32 bytes, AES-GCM for refresh tokens at rest
