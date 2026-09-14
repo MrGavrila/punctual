@@ -817,6 +817,10 @@ body{
   --pu-green-fill:#333;--pu-green-fill-hover:#111;
   --pu-success-action:#176B55;--pu-success-action-hover:#0F523F;
   --pu-success-action-text:#fff;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-tint:#E9F4F0;
+  --pu-booking-accent-text:#176B55;--pu-booking-accent-on-fill:#fff;
   --pu-danger:#B53845;--pu-danger-800:#8E2934;
   --pu-danger-text:#A8323E;--pu-danger-tint:#FAECEE;
   --pu-danger-action-text:#fff;
@@ -827,16 +831,16 @@ body{
   --pu-border-subtle:#ddd;--pu-border-strong:#888;--pu-border-focus:#333;
   --pu-field-border:#888;--pu-url-bg:#eee;
   --pu-slot-available-bg:#fff;--pu-slot-available-border:#888;--pu-slot-available-text:#111;
-  --pu-slot-hover-bg:#eee;--pu-slot-hover-border:#333;--pu-slot-hover-text:#111;
-  --pu-slot-selected-bg:#eee;--pu-slot-selected-border:#333;--pu-slot-selected-text:#111;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#111;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#111;
   --pu-slot-booked-bg:#eee;--pu-slot-booked-border:#ddd;--pu-slot-booked-text:#777;
   --pu-slot-past-bg:#f5f5f5;--pu-slot-past-text:#666;
   --pu-slot-outside-notice-bg:#fff;--pu-slot-outside-notice-border:#ddd;
   --pu-slot-outside-notice-text:#666;
   --pu-status-success:#0E7C4C;--pu-status-success-bg:#E4F5EC;
   --pu-booking-button-text:#fff;
-  --pu-booking-day-hover-bg:#ddd;--pu-booking-day-hover-text:#111;
-  --pu-booking-day-selected-bg:#333;--pu-booking-day-selected-text:#fff;
+  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
+  --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
 }
 
 body h1,
@@ -845,6 +849,8 @@ body h3,
 body .pu-host-name{font-family:var(--pu-font-ui)}
 body .pu-card{box-shadow:none}
 body .pu-meta .pu-dot{background:#333}
+body .pu-day[data-has-slots="1"]{
+  background:var(--pu-booking-accent-tint);color:var(--pu-booking-accent-text)}
 body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
   color:var(--pu-booking-button-text)}
 body .pu-btn-success{
@@ -858,7 +864,11 @@ body .pu-day[aria-disabled="true"]{
 body .pu-day[aria-selected="true"]{
   background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
 body .pu-day[aria-current="date"]{
-  box-shadow:inset 0 0 0 1px var(--pu-surface-raised),inset 0 0 0 3px var(--pu-border-focus)}
+  box-shadow:inset 0 0 0 1px var(--pu-surface-raised),inset 0 0 0 3px var(--pu-booking-accent)}
+body .pu-slot-available:active{
+  background:var(--pu-booking-accent);border-color:var(--pu-booking-accent);
+  color:var(--pu-booking-accent-on-fill)}
+body .pu-slot-chosen .pu-dot-lg{background:var(--pu-booking-accent)}
 body .pu-tz-wrap{border-color:var(--pu-field-border)}
 
 /* Neutralise sticky touch-hover before re-enabling hover feedback only for
@@ -876,7 +886,7 @@ body .pu-btn-ghost:not(.pu-btn-ghost-danger):hover{
 body .pu-btn-ghost-danger:hover{
   background:none;border-color:var(--pu-border-subtle);color:var(--pu-status-danger)}
 body .pu-day:hover[data-has-slots="1"]{
-  background:var(--pu-green-tint);color:var(--pu-green-700);transform:none}
+  background:var(--pu-booking-accent-tint);color:var(--pu-booking-accent-text);transform:none}
 body .pu-day[aria-selected="true"]:hover{
   background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
 body .pu-slot-available:hover{
@@ -899,6 +909,10 @@ body textarea:focus-visible{
   --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
   --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
   --pu-success-action-text:#111;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-tint:#183129;
+  --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
   --pu-danger:#E06C78;--pu-danger-800:#F0808A;
   --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
   --pu-danger-action-text:#111;
@@ -908,16 +922,16 @@ body textarea:focus-visible{
   --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
   --pu-field-border:#888;--pu-url-bg:#2a2a2a;
   --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
-  --pu-slot-hover-bg:#3a3a3a;--pu-slot-hover-border:#f5f5f5;--pu-slot-hover-text:#fff;
-  --pu-slot-selected-bg:#2a2a2a;--pu-slot-selected-border:#f5f5f5;--pu-slot-selected-text:#f5f5f5;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
   --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
   --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
   --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
   --pu-slot-outside-notice-text:#aaa;
   --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
   --pu-booking-button-text:#111;
-  --pu-booking-day-hover-bg:#3a3a3a;--pu-booking-day-hover-text:#fff;
-  --pu-booking-day-selected-bg:#f5f5f5;--pu-booking-day-selected-text:#111;
+  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
+  --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
 }
 @media(prefers-color-scheme:dark){
   :root:not([data-theme="light"]) body{
@@ -927,6 +941,10 @@ body textarea:focus-visible{
     --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
     --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
     --pu-success-action-text:#111;
+    --pu-booking-accent:var(--pu-success-action);
+    --pu-booking-accent-hover:var(--pu-success-action-hover);
+    --pu-booking-accent-tint:#183129;
+    --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
     --pu-danger:#E06C78;--pu-danger-800:#F0808A;
     --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
     --pu-danger-action-text:#111;
@@ -936,16 +954,16 @@ body textarea:focus-visible{
     --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
     --pu-field-border:#888;--pu-url-bg:#2a2a2a;
     --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
-    --pu-slot-hover-bg:#3a3a3a;--pu-slot-hover-border:#f5f5f5;--pu-slot-hover-text:#fff;
-    --pu-slot-selected-bg:#2a2a2a;--pu-slot-selected-border:#f5f5f5;--pu-slot-selected-text:#f5f5f5;
+    --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
+    --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
     --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
     --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
     --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
     --pu-slot-outside-notice-text:#aaa;
     --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
     --pu-booking-button-text:#111;
-    --pu-booking-day-hover-bg:#3a3a3a;--pu-booking-day-hover-text:#fff;
-    --pu-booking-day-selected-bg:#f5f5f5;--pu-booking-day-selected-text:#111;
+    --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
+    --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
   }
 }
 
