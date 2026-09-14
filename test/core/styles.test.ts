@@ -53,12 +53,12 @@ describe('the generated CSS blocks', () => {
     expect(css).toContain('--pu-text-primary:#f5f5f5')
   })
 
-  it('keeps semantic status colours while making the public booking controls graphite', () => {
+  it('keeps semantic status colours while making neutral booking controls graphite', () => {
     const css = pageCss()
     expect(css).toContain('--pu-status-success:#0E7C4C')
     expect(css).toContain('--pu-green-fill:#333')
     expect(css).toContain('--pu-green-fill-hover:#111')
-    expect(css).toContain('body .pu-meta .pu-dot{background:#333}')
+    expect(css).toContain('body .pu-meta .pu-dot{background:var(--pu-booking-accent)}')
     expect(css).toContain('@media(hover:hover) and (pointer:fine)')
   })
 })

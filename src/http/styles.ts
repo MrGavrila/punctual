@@ -829,7 +829,7 @@ body{
   --pu-surface-canvas:#f5f5f5;--pu-surface-raised:#fff;--pu-surface-sunken:#eee;
   --pu-text-primary:#111;--pu-text-secondary:#555;--pu-text-muted:#666;--pu-text-disabled:#777;
   --pu-border-subtle:#ddd;--pu-border-strong:#888;--pu-border-focus:#333;
-  --pu-field-border:#888;--pu-url-bg:#eee;
+  --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#eee;
   --pu-slot-available-bg:#fff;--pu-slot-available-border:#888;--pu-slot-available-text:#111;
   --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#111;
   --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#111;
@@ -848,7 +848,7 @@ body h2,
 body h3,
 body .pu-host-name{font-family:var(--pu-font-ui)}
 body .pu-card{box-shadow:none}
-body .pu-meta .pu-dot{background:#333}
+body .pu-meta .pu-dot{background:var(--pu-booking-accent)}
 body .pu-day[data-has-slots="1"]{
   background:var(--pu-booking-accent-tint);color:var(--pu-booking-accent-text)}
 body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
@@ -920,7 +920,7 @@ body textarea:focus-visible{
   --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
   --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
   --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
-  --pu-field-border:#888;--pu-url-bg:#2a2a2a;
+  --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
   --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
   --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
   --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
@@ -952,7 +952,7 @@ body textarea:focus-visible{
     --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
     --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
     --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
-    --pu-field-border:#888;--pu-url-bg:#2a2a2a;
+    --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
     --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
     --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
     --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;

@@ -699,7 +699,7 @@ export function confirmForm(
     ${errors['email'] ? `<p class="pu-err" id="err-email">${escapeHtml(errors['email'])}</p>` : ''}
     ${questions}
     <div style="margin-top:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap">
-      <button class="pu-btn" type="submit">Confirm booking</button>
+      <button class="pu-btn pu-btn-success" type="submit">Confirm booking</button>
       <a class="pu-btn pu-btn-ghost" href="${escapeHtml(bookingPath(d))}?date=${escapeHtml(localDateString(start, d.guestTimezone))}${d.embed ? '&embed=1' : ''}">Back</a>
     </div>
   </form>
