@@ -909,6 +909,12 @@ export interface EngineConfig {
    * make every such deployment's own homepage embed a 404ing iframe.
    */
   demoBookingPath?: string
+  /** Public surface exposed by this deployment. Defaults to the full product site. */
+  publicSiteMode?: 'full' | 'booking-only'
+  /** Whether authenticated REST API routes are mounted. Defaults to true. */
+  restApiEnabled?: boolean
+  /** Whether the authenticated MCP endpoint is mounted. Defaults to true. */
+  mcpEnabled?: boolean
   supportEmail: string
   fromEmail: string
   fromName: string

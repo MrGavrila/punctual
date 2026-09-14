@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BASE_CSS, LANDING_CSS, pageCss, TOKENS } from '../../src/http/styles.js'
+import { BASE_CSS, BOOKING_THEME_CSS, LANDING_CSS, pageCss, TOKENS } from '../../src/http/styles.js'
 
 /**
  * These CSS blocks are plain template-string literals — nothing checks them
@@ -39,14 +39,15 @@ describe('the generated CSS blocks', () => {
     }
   })
 
-  it('adds a scoped Kisielowa booking theme without changing the shared application theme', () => {
+  it('applies the Kisielowa theme to every remaining application page', () => {
     const css = pageCss()
-    expect(css).toContain('body.pu-booking-theme{')
+    expect(BOOKING_THEME_CSS).toContain('body{')
+    expect(BOOKING_THEME_CSS).not.toContain('body.pu-booking-theme')
     expect(css).toContain('--pu-surface-canvas:#f5f5f5')
     expect(css).toContain('--pu-surface-raised:#fff')
     expect(css).toContain('--pu-text-primary:#111')
     expect(css).toContain('--pu-radius:2px')
-    expect(css).toContain(':root[data-theme="dark"] body.pu-booking-theme{')
+    expect(css).toContain(':root[data-theme="dark"] body{')
     expect(css).toContain('--pu-surface-canvas:#111')
     expect(css).toContain('--pu-surface-raised:#1c1c1c')
     expect(css).toContain('--pu-text-primary:#f5f5f5')
@@ -57,7 +58,7 @@ describe('the generated CSS blocks', () => {
     expect(css).toContain('--pu-status-success:#0E7C4C')
     expect(css).toContain('--pu-green-fill:#333')
     expect(css).toContain('--pu-green-fill-hover:#111')
-    expect(css).toContain('body.pu-booking-theme .pu-meta .pu-dot{background:#333}')
+    expect(css).toContain('body .pu-meta .pu-dot{background:#333}')
     expect(css).toContain('@media(hover:hover) and (pointer:fine)')
   })
 })

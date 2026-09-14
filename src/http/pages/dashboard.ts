@@ -78,6 +78,8 @@ const NAV: ReadonlyArray<{ key: NavKey; href: string; label: string }> = [
 export interface DashboardChrome {
   brandName: string
   user: User
+  /** Hides API-key navigation when neither REST nor MCP is mounted. */
+  apiAccessEnabled?: boolean
   /** Double-submit token for this session (ADR-0005 §5). */
   csrf: string
   /**
@@ -109,8 +111,7 @@ function emailWarningBanner(chrome: DashboardChrome): string {
   <p style="margin:0"><strong>Email is not configured — no one is receiving confirmations.</strong>
     Bookings are being saved and synced to calendars, but every confirmation, reschedule notice,
     cancellation and reminder is written to the log instead of sent. Set
-    <code>RESEND_API_KEY</code> or <code>BREVO_API_KEY</code> as a secret, then redeploy
-    &mdash; see <a href="/docs/self-hosting">self-hosting</a>.</p>
+    <code>RESEND_API_KEY</code> or <code>BREVO_API_KEY</code> as a secret, then redeploy.</p>
 </div>`
 }
 
@@ -126,7 +127,11 @@ export function csrfField(csrf: string): string {
  * a link the user might bookmark.
  */
 function shellTop(chrome: DashboardChrome, title: string, active: NavKey | null): string {
-  const links = NAV.filter((item) => item.key !== 'admin' || chrome.user.role === 'admin')
+  const links = NAV.filter(
+    (item) =>
+      (item.key !== 'keys' || chrome.apiAccessEnabled !== false) &&
+      (item.key !== 'admin' || chrome.user.role === 'admin'),
+  )
     .map((item) => {
       const current = item.key === active ? ' aria-current="page"' : ''
       return `<a class="pu-nav-link" href="${item.href}"${current}>${escapeHtml(item.label)}</a>`
@@ -174,9 +179,6 @@ function shellBottom(brandName: string): string {
   <div class="pu-wrap pu-dash-foot-row">
     <a class="pu-mark" href="/">${escapeHtml(brandName.toLowerCase())}<span>:</span></a>
     <nav aria-label="Dashboard footer">
-      <a href="/docs">Docs</a>
-      <a href="/docs/api">API</a>
-      <a href="/docs/mcp">MCP</a>
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>
     </nav>
@@ -287,7 +289,7 @@ export function loginPage(d: LoginPageData): string {
   return (
     shellHead({ title: `Sign in · ${d.brandName}`, brandName: d.brandName }) +
     `<section class="pu-card" style="max-width:26rem;margin:3rem auto">${body}</section>` +
-    shellFoot()
+    shellFoot(false)
   )
 }
 
@@ -1920,8 +1922,7 @@ export function connectionsPage(d: ConnectionsPageData): string {
   // also run the deployment is the fix theirs to make.
   const connectButtons =
     d.availableProviders.length === 0
-      ? `<p class="pu-muted">This deployment has no Google or Microsoft credentials yet. If you run it, see
-       <a href="/docs/self-hosting">self-hosting &rarr; calendar providers</a>; otherwise ask your admin.</p>`
+      ? `<p class="pu-muted">This deployment has no Google or Microsoft calendar credentials yet. Ask your administrator to configure a provider.</p>`
       : d.availableProviders
           .map(
             (p) =>
@@ -2100,8 +2101,7 @@ export function apiKeysPage(d: ApiKeysPageData): string {
   <code id="new-key" class="pu-key">${escapeHtml(d.newKey)}</code>
   <div class="pu-form-row" style="justify-content:flex-start">
     ${revealCopyButton(d.newKey)}
-    <span class="pu-muted" style="font-size:.8125rem">Send it as <code>Authorization: Bearer &lt;key&gt;</code>
-      &mdash; see the <a href="/docs/api">API docs</a>.</span>
+    <span class="pu-muted" style="font-size:.8125rem">Send it to a trusted integration as <code>Authorization: Bearer &lt;key&gt;</code>.</span>
   </div>
 </section>`
       : '') +
@@ -2385,7 +2385,7 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
   <p class="pu-muted">This booking is no longer active, so there is nothing left to change.</p>
 </section>`
       : rescheduleSection(d, tokenField) + cancelSection(d, tokenField)) +
-    shellFoot()
+    shellFoot(false)
   )
 }
 
@@ -2435,7 +2435,7 @@ function rescheduleSection(d: BookingDetailPageData, tokenField: string): string
     ${tokenField}
     <input type="hidden" name="start" value="${d.newStart}">
     <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <button class="pu-btn" type="submit">Confirm new time</button>
+      <button class="pu-btn pu-btn-success" type="submit">Confirm new time</button>
       <a class="pu-btn pu-btn-ghost" href="${escapeHtml(path)}">Back</a>
     </div>
   </form>
@@ -2502,7 +2502,7 @@ export function manageLinkErrorPage(brandName: string, message: string): string 
   <p class="pu-muted">Links expire, and rescheduling replaces the ones sent before it. The most recent
      confirmation email always has a working link.</p>
 </section>` +
-    shellFoot()
+    shellFoot(false)
   )
 }
 
@@ -2839,7 +2839,7 @@ function actionsSection(d: HostBookingPageData, path: string, confirmed: boolean
   // says so — and the note is addressed to them, not filed as a reason.
   return `<section class="pu-card" aria-label="Actions">
     <h2>Change this booking</h2>
-    <p><a class="pu-btn" href="${path}/reschedule">Reschedule</a></p>
+    <p><a class="pu-btn pu-btn-success" href="${path}/reschedule">Reschedule</a></p>
     <form method="post" action="${path}/cancel" class="pu-cancel-form"
           onsubmit="return confirm('Cancel this booking? The guest will be emailed.')">
       ${csrfField(d.csrf)}
@@ -2902,7 +2902,7 @@ export function hostReschedulePage(d: HostReschedulePageData): string {
     <input type="hidden" name="start" value="${d.newStart}">
     <p class="pu-help">${escapeHtml(b.guestName)} is emailed the new time; their calendar invite is updated.</p>
     <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <button class="pu-btn" type="submit">Move booking</button>
+      <button class="pu-btn pu-btn-success" type="submit">Move booking</button>
       <a class="pu-btn pu-btn-ghost" href="${path}/reschedule">Pick another</a>
     </div>
   </form>

@@ -803,18 +803,23 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
 `
 
 /**
- * Deployment-specific public booking skin. Every selector is rooted at the
- * opt-in body class so the dashboard, docs and landing page keep Punctual's
- * own theme. The public booking page deliberately mirrors kisielowa.com's
- * neutral palette and square geometry while semantic success/danger/warning
- * colours remain status signals rather than decoration.
+ * Deployment-wide Kisielowa skin. The booking-only deployment keeps the
+ * booking journey, owner dashboard, authentication, legal and error pages;
+ * one shared override gives every retained page the same neutral palette and
+ * square geometry. Semantic success/danger/warning colours remain status
+ * signals rather than decoration.
  */
 export const BOOKING_THEME_CSS = `
-body.pu-booking-theme{
+body{
   --pu-paper:#fff;--pu-paper-dim:#eee;--pu-line:#ddd;
   --pu-ink-950:#111;--pu-ink-900:#222;--pu-ink-700:#333;--pu-ink-500:#555;
   --pu-green-700:#333;--pu-green-800:#111;--pu-green-tint:#eee;
   --pu-green-fill:#333;--pu-green-fill-hover:#111;
+  --pu-success-action:#176B55;--pu-success-action-hover:#0F523F;
+  --pu-success-action-text:#fff;
+  --pu-danger:#B53845;--pu-danger-800:#8E2934;
+  --pu-danger-text:#A8323E;--pu-danger-tint:#FAECEE;
+  --pu-danger-action-text:#fff;
   --pu-radius:2px;--pu-radius-lg:2px;--pu-shadow-sm:none;
   --pu-ring:0 0 0 3px rgba(51,51,51,.22);
   --pu-surface-canvas:#f5f5f5;--pu-surface-raised:#fff;--pu-surface-sunken:#eee;
@@ -834,49 +839,69 @@ body.pu-booking-theme{
   --pu-booking-day-selected-bg:#333;--pu-booking-day-selected-text:#fff;
 }
 
-body.pu-booking-theme h1,
-body.pu-booking-theme h2,
-body.pu-booking-theme h3,
-body.pu-booking-theme .pu-host-name{font-family:var(--pu-font-ui)}
-body.pu-booking-theme .pu-card{box-shadow:none}
-body.pu-booking-theme .pu-meta .pu-dot{background:#333}
-body.pu-booking-theme .pu-btn:not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
+body h1,
+body h2,
+body h3,
+body .pu-host-name{font-family:var(--pu-font-ui)}
+body .pu-card{box-shadow:none}
+body .pu-meta .pu-dot{background:#333}
+body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
   color:var(--pu-booking-button-text)}
-body.pu-booking-theme .pu-day[aria-disabled="true"]{
+body .pu-btn-success{
+  background:var(--pu-success-action);border-color:var(--pu-success-action);
+  color:var(--pu-success-action-text)}
+body .pu-btn-danger{
+  background:var(--pu-danger);border-color:var(--pu-danger);
+  color:var(--pu-danger-action-text)}
+body .pu-day[aria-disabled="true"]{
   background:var(--pu-surface-raised);color:var(--pu-text-disabled)}
-body.pu-booking-theme .pu-day[aria-selected="true"]{
+body .pu-day[aria-selected="true"]{
   background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
-body.pu-booking-theme .pu-day[aria-current="date"]{
+body .pu-day[aria-current="date"]{
   box-shadow:inset 0 0 0 1px var(--pu-surface-raised),inset 0 0 0 3px var(--pu-border-focus)}
-body.pu-booking-theme .pu-tz-wrap{border-color:var(--pu-field-border)}
+body .pu-tz-wrap{border-color:var(--pu-field-border)}
 
 /* Neutralise sticky touch-hover before re-enabling hover feedback only for
    devices that actually have a fine pointer. */
-body.pu-booking-theme .pu-btn:hover{background:var(--pu-green-fill);border-color:var(--pu-green-fill)}
-body.pu-booking-theme .pu-btn-ghost:hover{
+body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger):hover{
+  background:var(--pu-green-fill);border-color:var(--pu-green-fill)}
+body .pu-btn-success:hover{
+  background:var(--pu-success-action);border-color:var(--pu-success-action);
+  color:var(--pu-success-action-text)}
+body .pu-btn-danger:hover{
+  background:var(--pu-danger);border-color:var(--pu-danger);
+  color:var(--pu-danger-action-text)}
+body .pu-btn-ghost:not(.pu-btn-ghost-danger):hover{
   background:none;border-color:var(--pu-field-border);color:var(--pu-text-primary)}
-body.pu-booking-theme .pu-day:hover[data-has-slots="1"]{
+body .pu-btn-ghost-danger:hover{
+  background:none;border-color:var(--pu-border-subtle);color:var(--pu-status-danger)}
+body .pu-day:hover[data-has-slots="1"]{
   background:var(--pu-green-tint);color:var(--pu-green-700);transform:none}
-body.pu-booking-theme .pu-day[aria-selected="true"]:hover{
+body .pu-day[aria-selected="true"]:hover{
   background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
-body.pu-booking-theme .pu-slot-available:hover{
+body .pu-slot-available:hover{
   background:var(--pu-slot-available-bg);border-color:var(--pu-slot-available-border);
   color:var(--pu-slot-available-text);box-shadow:none;transform:none}
 
-body.pu-booking-theme .pu-day:focus-visible,
-body.pu-booking-theme .pu-slot:focus-visible,
-body.pu-booking-theme .pu-btn:focus-visible{
+body .pu-day:focus-visible,
+body .pu-slot:focus-visible,
+body .pu-btn:focus-visible{
   outline:3px solid var(--pu-border-focus);outline-offset:3px}
-body.pu-booking-theme input:focus-visible,
-body.pu-booking-theme select:focus-visible,
-body.pu-booking-theme textarea:focus-visible{
+body input:focus-visible,
+body select:focus-visible,
+body textarea:focus-visible{
   outline:3px solid var(--pu-border-focus);outline-offset:2px}
 
-:root[data-theme="dark"] body.pu-booking-theme{
+:root[data-theme="dark"] body{
   --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
   --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
   --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
   --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
+  --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
+  --pu-success-action-text:#111;
+  --pu-danger:#E06C78;--pu-danger-800:#F0808A;
+  --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
+  --pu-danger-action-text:#111;
   --pu-ring:0 0 0 3px rgba(245,245,245,.24);
   --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
   --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
@@ -895,11 +920,16 @@ body.pu-booking-theme textarea:focus-visible{
   --pu-booking-day-selected-bg:#f5f5f5;--pu-booking-day-selected-text:#111;
 }
 @media(prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) body.pu-booking-theme{
+  :root:not([data-theme="light"]) body{
     --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
     --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
     --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
     --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
+    --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
+    --pu-success-action-text:#111;
+    --pu-danger:#E06C78;--pu-danger-800:#F0808A;
+    --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
+    --pu-danger-action-text:#111;
     --pu-ring:0 0 0 3px rgba(245,245,245,.24);
     --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
     --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
@@ -920,15 +950,24 @@ body.pu-booking-theme textarea:focus-visible{
 }
 
 @media(hover:hover) and (pointer:fine){
-  body.pu-booking-theme .pu-btn:hover{
+  body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger):hover{
     background:var(--pu-green-fill-hover);border-color:var(--pu-green-fill-hover)}
-  body.pu-booking-theme .pu-btn-ghost:hover{
+  body .pu-btn-success:hover{
+    background:var(--pu-success-action-hover);border-color:var(--pu-success-action-hover);
+    color:var(--pu-success-action-text)}
+  body .pu-btn-danger:hover{
+    background:var(--pu-danger-800);border-color:var(--pu-danger-800);
+    color:var(--pu-danger-action-text)}
+  body .pu-btn-ghost:not(.pu-btn-ghost-danger):hover{
     background:var(--pu-surface-sunken);border-color:var(--pu-border-strong);color:var(--pu-text-primary)}
-  body.pu-booking-theme .pu-day:hover[data-has-slots="1"]{
+  body .pu-btn-ghost-danger:hover{
+    background:var(--pu-status-danger-bg);border-color:var(--pu-status-danger);
+    color:var(--pu-status-danger)}
+  body .pu-day:hover[data-has-slots="1"]{
     background:var(--pu-booking-day-hover-bg);color:var(--pu-booking-day-hover-text)}
-  body.pu-booking-theme .pu-day[aria-selected="true"]:hover{
+  body .pu-day[aria-selected="true"]:hover{
     background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
-  body.pu-booking-theme .pu-slot-available:hover{
+  body .pu-slot-available:hover{
     background:var(--pu-slot-hover-bg);border-color:var(--pu-slot-hover-border);
     color:var(--pu-slot-hover-text);box-shadow:none;transform:none}
 }

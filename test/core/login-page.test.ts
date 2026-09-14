@@ -9,11 +9,12 @@ import { describe, expect, it } from 'vitest'
 import { loginPage } from '../../src/http/pages/dashboard.js'
 
 describe('loginPage', () => {
-  it('carries the wordmark above the heading, in both states', () => {
+  it('carries the deployment brand above the heading without Punctual attribution', () => {
     for (const data of [{ sent: false }, { sent: true }]) {
-      const html = loginPage({ brandName: 'Punctual', providers: [], ...data })
+      const html = loginPage({ brandName: 'Dr. Kisielowa', providers: [], ...data })
       const mark = html.indexOf('<a class="pu-mark" href="/"')
-      expect(html).toContain('>punctual<span>:</span></a>')
+      expect(html).toContain('>dr. kisielowa<span>:</span></a>')
+      expect(html).not.toContain('https://punctual.sh')
       expect(mark).toBeGreaterThan(-1)
       expect(mark).toBeLessThan(html.indexOf('<h1>'))
     }

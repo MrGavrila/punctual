@@ -41,6 +41,11 @@ export interface Env {
   BRAND_NAME?: string
   LEGAL_OPERATOR?: string
   DEMO_BOOKING_PATH?: string
+  /** `booking-only` redirects `/` to DEMO_BOOKING_PATH and hides marketing/docs routes. */
+  PUBLIC_SITE_MODE?: string
+  /** Strict `1`/`0` feature flags; invalid values fail deployment startup. */
+  REST_API_ENABLED?: string
+  MCP_ENABLED?: string
   /** GA4 measurement id for the marketing/docs pages only — see EngineConfig.analyticsId in ports.ts. */
   GA_MEASUREMENT_ID?: string
   /** Signup policy: unset/"open", "closed", or a comma list of emails/@domains — see `SignupPolicy` in ports.ts. Set as a secret/var per deployment; never a public-repo default, which would lock a fresh self-hoster out of their own instance. */
@@ -75,6 +80,26 @@ export function buildPorts(env: Env): EnginePorts {
         'emails, OAuth callbacks and manage pages is built from it.',
     )
   }
+
+  const publicSiteMode = env.PUBLIC_SITE_MODE ?? 'full'
+  if (publicSiteMode !== 'full' && publicSiteMode !== 'booking-only') {
+    throw new Error('PUBLIC_SITE_MODE must be either "full" or "booking-only"')
+  }
+  if (
+    publicSiteMode === 'booking-only' &&
+    (!env.DEMO_BOOKING_PATH ||
+      !/^\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(env.DEMO_BOOKING_PATH))
+  ) {
+    throw new Error(
+      'DEMO_BOOKING_PATH must be a local /owner-slug/event-slug path when PUBLIC_SITE_MODE is booking-only',
+    )
+  }
+  // A booking-only instance is closed by default: deleting a variable during
+  // config maintenance must not silently restore an interface the operator
+  // deliberately removed. Full product deployments retain the OSS default.
+  const programmaticDefault = publicSiteMode === 'full'
+  const restApiEnabled = enabledFlag(env.REST_API_ENABLED, 'REST_API_ENABLED', programmaticDefault)
+  const mcpEnabled = enabledFlag(env.MCP_ENABLED, 'MCP_ENABLED', programmaticDefault)
 
   // Key material. A missing key is a hard failure rather than a silent
   // fallback: silently encrypting refresh tokens with a default key would be
@@ -173,6 +198,9 @@ export function buildPorts(env: Env): EnginePorts {
       brandName: env.BRAND_NAME ?? 'Punctual',
       ...(env.LEGAL_OPERATOR ? { legalOperator: env.LEGAL_OPERATOR } : {}),
       ...(env.DEMO_BOOKING_PATH ? { demoBookingPath: env.DEMO_BOOKING_PATH } : {}),
+      publicSiteMode,
+      restApiEnabled,
+      mcpEnabled,
       ...(env.GA_MEASUREMENT_ID ? { analyticsId: env.GA_MEASUREMENT_ID } : {}),
       ...(env.SIGNUPS ? { signupPolicy: parseSignupPolicy(env.SIGNUPS) } : {}),
       supportEmail: env.SUPPORT_EMAIL ?? 'hello@example.com',
@@ -193,6 +221,13 @@ export function buildPorts(env: Env): EnginePorts {
   })
 
   return ports
+}
+
+function enabledFlag(value: string | undefined, name: string, defaultValue: boolean): boolean {
+  if (value === undefined) return defaultValue
+  if (value === '1') return true
+  if (value === '0') return false
+  throw new Error(`${name} must be either "1" or "0"`)
 }
 
 export default {

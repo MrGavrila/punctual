@@ -89,76 +89,98 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     })
   })
 
-  // Marketing landing page and docs index. Registered before every other
-  // route so they win regardless of what else claims '/' — same reasoning as
-  // the /privacy and /terms mounts below.
-  app.get('/', (c) =>
-    c.html(
-      landingPage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.demoBookingPath ? { demoPath: ports.config.demoBookingPath } : {}),
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
-  app.get('/docs', (c) =>
-    c.html(
-      docsIndexPage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
-  app.get('/docs/self-hosting', (c) =>
-    c.html(
-      docsSelfHostingPage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
-  app.get('/docs/api', (c) =>
-    c.html(
-      docsApiPage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
-  app.get('/docs/mcp', (c) =>
-    c.html(
-      docsMcpPage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
-  app.get('/calendly-alternative', (c) =>
-    c.html(
-      calendlyAlternativePage({
-        brandName: ports.config.brandName,
-        baseUrl: ports.config.baseUrl,
-        ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
-        ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
-      }),
-    ),
-  )
+  // A booking-only deployment retains the product flows but has no public
+  // Punctual marketing or documentation surface. Register explicit all-method
+  // 404s before the generic two-segment booking route so `/docs/anything`
+  // never performs a booking-page lookup.
+  if (ports.config.publicSiteMode === 'booking-only') {
+    app.get('/', (c) => c.redirect(ports.config.demoBookingPath!, 302))
+    app.all('/docs', (c) => notFound(c, ports))
+    app.all('/docs/*', (c) => notFound(c, ports))
+    app.all('/calendly-alternative', (c) => notFound(c, ports))
+  } else {
+    // Marketing landing page and docs index. Registered before every other
+    // route so they win regardless of what else claims '/' — same reasoning as
+    // the /privacy and /terms mounts below.
+    app.get('/', (c) =>
+      c.html(
+        landingPage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.demoBookingPath ? { demoPath: ports.config.demoBookingPath } : {}),
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+    app.get('/docs', (c) =>
+      c.html(
+        docsIndexPage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+    app.get('/docs/self-hosting', (c) =>
+      c.html(
+        docsSelfHostingPage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+    app.get('/docs/api', (c) =>
+      c.html(
+        docsApiPage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+    app.get('/docs/mcp', (c) =>
+      c.html(
+        docsMcpPage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+    app.get('/calendly-alternative', (c) =>
+      c.html(
+        calendlyAlternativePage({
+          brandName: ports.config.brandName,
+          baseUrl: ports.config.baseUrl,
+          ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
+          ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        }),
+      ),
+    )
+  }
 
-  // Programmatic surfaces. Mounted before the /:userSlug/:eventSlug catch-all
-  // so a host cannot claim the slug "api" and shadow them.
-  app.route('/api/v1', buildApiRoutes(ports, slots))
-  // The MCP sub-app registers its handlers at '/', so it mounts at '/mcp'.
-  app.route('/mcp', buildMcpRoutes(ports, slots))
+  // Programmatic surfaces. Each can be disabled independently without
+  // affecting the public booking flow or the owner dashboard. Explicit 404s
+  // avoid advertising a dormant interface through authentication errors.
+  if (ports.config.restApiEnabled !== false) {
+    app.route('/api/v1', buildApiRoutes(ports, slots))
+  } else {
+    app.all('/api/v1', (c) => notFound(c, ports))
+    app.all('/api/v1/*', (c) => notFound(c, ports))
+  }
+  if (ports.config.mcpEnabled !== false) {
+    // The MCP sub-app registers its handlers at '/', so it mounts at '/mcp'.
+    app.route('/mcp', buildMcpRoutes(ports, slots))
+  } else {
+    app.all('/mcp', (c) => notFound(c, ports))
+    app.all('/mcp/*', (c) => notFound(c, ports))
+  }
   app.route('/', buildEmbedRoutes(ports))
 
   // Dashboard, auth and guest-manage routes. Mount order is load-bearing:
@@ -190,7 +212,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/privacy`,
       }) +
         privacyPage(legal()) +
-        shellFoot(),
+        shellFoot(false),
     ),
   )
   app.get('/terms', (c) =>
@@ -201,7 +223,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/terms`,
       }) +
         termsPage(legal()) +
-        shellFoot(),
+        shellFoot(false),
     ),
   )
 
@@ -647,7 +669,7 @@ function notFound(c: Context<{ Bindings: Env }>, ports: EnginePorts): Response |
   return c.html(
     shellHead({ title: 'Not found', brandName: ports.config.brandName }) +
       errorPage('Not found', 'That booking page does not exist.') +
-      shellFoot(),
+      shellFoot(false),
     404,
   )
 }
@@ -681,9 +703,9 @@ async function bookingPageRateLimited(
   const limit = await ports.rateLimiter.check('booking_page:ip', ip, 120, 60)
   if (limit.allowed) return undefined
   return c.html(
-    shellHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
+    publicBookingHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
       errorPage('Too many requests', 'Please wait a little and try again.') +
-      shellFoot(),
+      publicBookingFoot(),
     429,
     { 'retry-after': String(Math.ceil((limit.resetAt - ports.clock.now()) / 1000)) },
   )

@@ -45,6 +45,17 @@ function connection(patch: Partial<CalendarConnection> = {}): CalendarConnection
 const listed = [{ id: 'primary', name: 'grace@gmail.example', primary: true }]
 
 describe('dashboard chrome', () => {
+  it('hides API-key controls when both programmatic interfaces are disabled', () => {
+    const html = connectionsPage({
+      ...chrome,
+      apiAccessEnabled: false,
+      connections: [],
+      availableProviders: [],
+    })
+
+    expect(html).not.toContain('href="/dashboard/api-keys"')
+  })
+
   it('lays the header out from the stylesheet, not an inline style the phone rule cannot beat', () => {
     const html = apiKeysPage({ ...chrome, keys: [] })
     expect(html).toContain('<header class="pu-dash-header">')
@@ -87,11 +98,11 @@ describe('calendars page', () => {
     ).toContain('<h2>Connect another calendar</h2>')
   })
 
-  it('tells a host without a provider who can fix it, and where', () => {
+  it('tells a host without a provider who can fix it without linking to disabled docs', () => {
     const html = connectionsPage({ ...chrome, connections: [], availableProviders: [] })
-    expect(html).toContain('This deployment has no Google or Microsoft credentials yet')
-    expect(html).toContain('href="/docs/self-hosting"')
-    expect(html).toContain('otherwise ask your admin')
+    expect(html).toContain('This deployment has no Google or Microsoft calendar credentials yet')
+    expect(html).toContain('Ask your administrator to configure a provider')
+    expect(html).not.toContain('href="/docs')
     expect(html).not.toContain("Set the provider's")
   })
 
@@ -186,7 +197,7 @@ describe('API keys page', () => {
     const html = apiKeysPage({ ...chrome, keys: [key], newKey: raw })
     expect(html).toContain(`<code id="new-key" class="pu-key">${raw}</code>`)
     expect(html).toContain('Authorization: Bearer &lt;key&gt;')
-    expect(html).toContain('href="/docs/api"')
+    expect(html).not.toContain('href="/docs')
     expect(html).not.toContain(`value="${raw}"`)
   })
 

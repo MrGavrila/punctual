@@ -174,6 +174,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
   // Closed over beside brandName because it travels with it into every
   // DashboardChrome literal below — see emailWarningBanner in pages/dashboard.ts.
   const emailDelivery = ports.config.emailDelivery
+  const apiAccessEnabled = ports.config.restApiEnabled !== false || ports.config.mcpEnabled !== false
   const secureCookies = ports.config.baseUrl.startsWith('https://')
   const hash = (value: string): Promise<string> => ports.crypto.hash(value)
 
@@ -243,7 +244,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           'Request not accepted',
           'This form was submitted without a valid security token. Reload the page and try again.',
         ) +
-        shellFoot(),
+        shellFoot(false),
       403,
     )
   }
@@ -623,6 +624,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user,
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         eventTypes,
         upcomingBookings,
         baseUrl: ports.config.baseUrl,
@@ -644,6 +646,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: c.get('user'),
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         teams: await managedTeams(c),
         schedules: await c.get('repos').availability.listForUser(c.get('user').id),
       }),
@@ -659,6 +662,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: c.get('user'),
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         eventType,
         teams: await managedTeams(c),
         schedules: await c.get('repos').availability.listForUser(c.get('user').id),
@@ -824,6 +828,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user,
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           eventType: draft,
           questionsText,
           errors,
@@ -909,6 +914,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user,
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           eventType: draft,
           questionsText: read.questionsText,
           teams: await managedTeams(c),
@@ -928,6 +934,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user,
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           eventType: draft,
           questionsText: read.questionsText,
           errors,
@@ -953,6 +960,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
             user,
             csrf: c.get('csrf'),
             emailDelivery,
+            apiAccessEnabled,
             eventType: draft,
             questionsText: read.questionsText,
             errors: { hosts: 'A host is no longer on the team, or a schedule was deleted. Reload the page and try again.' },
@@ -981,6 +989,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       user: c.get('user'),
       csrf: c.get('csrf'),
       emailDelivery,
+      apiAccessEnabled,
       eventType,
       teams: await managedTeams(c),
       schedules: await c.get('repos').availability.listForUser(c.get('user').id),
@@ -1043,6 +1052,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user: c.get('user'),
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           eventType: existing,
           teams: await managedTeams(c),
           schedules: await c.get('repos').availability.listForUser(c.get('user').id),
@@ -1157,6 +1167,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       user: c.get('user'),
       csrf: c.get('csrf'),
       emailDelivery,
+      apiAccessEnabled,
       schedules,
       creatorNames,
       ...(who.scope ? { scope: who.scope } : { teamEvents: await teamEventsFor(c, who.subject) }),
@@ -1239,6 +1250,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       user: c.get('user'),
       csrf: c.get('csrf'),
       emailDelivery,
+      apiAccessEnabled,
       schedule,
       ...(who.scope ? { scope: who.scope } : {}),
     }
@@ -1314,7 +1326,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       return c.html(
         shellHead({ title: 'Request not accepted', brandName }) +
           errorPage('Request not accepted', 'This page was open from before an update. Reload and try again.') +
-          shellFoot(),
+          shellFoot(false),
         409,
       )
     }
@@ -1533,7 +1545,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
    * for an instance admin every other team on the instance as well, marked
    * as such.
    */
-  async function teamsData(c: Ctx): Promise<Pick<TeamsPageData, 'brandName' | 'user' | 'csrf' | 'emailDelivery' | 'teams'>> {
+  async function teamsData(
+    c: Ctx,
+  ): Promise<Pick<TeamsPageData, 'brandName' | 'user' | 'csrf' | 'emailDelivery' | 'apiAccessEnabled' | 'teams'>> {
     const repos = c.get('repos')
     const user = c.get('user')
     const memberships = await repos.teams.memberships(user.id)
@@ -1556,7 +1570,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         if (!seen.has(team.id)) views.push(await view(team, true))
       }
     }
-    return { brandName, user, csrf: c.get('csrf'), emailDelivery, teams: views }
+    return { brandName, user, csrf: c.get('csrf'), emailDelivery, apiAccessEnabled, teams: views }
   }
 
   /**
@@ -1893,6 +1907,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user,
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         connections: views,
         availableProviders: ports.calendars.available(),
         ...(c.req.query('connected') ? { notice: 'Calendar connected.' } : {}),
@@ -1958,11 +1973,20 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
   // Dashboard — API keys
   // ===========================================================================
 
+  const requireApiAccess: MiddlewareHandler<{ Bindings: Env; Variables: Vars }> = async (c, next) => {
+    if (!apiAccessEnabled) return notFound(c)
+    await next()
+    return undefined
+  }
+  app.use('/dashboard/api-keys', requireApiAccess)
+  app.use('/dashboard/api-keys/*', requireApiAccess)
+
   app.get('/dashboard/api-keys', requireSession, async (c) => {
     const user = c.get('user')
     const keys = await c.get('repos').apiKeys.listForUser(user.id)
-    return c.html(apiKeysPage({ brandName, user, csrf: c.get('csrf'),
- emailDelivery, keys }))
+    return c.html(
+      apiKeysPage({ brandName, user, csrf: c.get('csrf'), emailDelivery, apiAccessEnabled, keys }),
+    )
   })
 
   /**
@@ -1996,6 +2020,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user,
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           keys,
           nameValue: name,
           scopesValue: scopes,
@@ -2012,8 +2037,17 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     await advanceBookmark(c)
 
     const keys = await repos.apiKeys.listForUser(user.id)
-    return c.html(apiKeysPage({ brandName, user, csrf: c.get('csrf'),
- emailDelivery, keys, newKey: created.raw }))
+    return c.html(
+      apiKeysPage({
+        brandName,
+        user,
+        csrf: c.get('csrf'),
+        emailDelivery,
+        apiAccessEnabled,
+        keys,
+        newKey: created.raw,
+      }),
+    )
   })
 
   /**
@@ -2026,7 +2060,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     const id = c.req.param('id') ?? ''
     const apiKey = (await c.get('repos').apiKeys.listForUser(user.id)).find((k) => k.id === id)
     if (!apiKey) return notFound(c)
-    return c.html(revokeKeyPage({ brandName, user, csrf: c.get('csrf'), emailDelivery, apiKey }))
+    return c.html(revokeKeyPage({ brandName, user, csrf: c.get('csrf'), emailDelivery, apiAccessEnabled, apiKey }))
   })
 
   app.post('/dashboard/api-keys/:id/delete', requireSession, async (c) => {
@@ -2048,7 +2082,16 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
   // ===========================================================================
 
   app.get('/dashboard/settings', requireSession, (c) =>
-    c.html(settingsPage({ brandName, baseUrl: ports.config.baseUrl, user: c.get('user'), csrf: c.get('csrf'), emailDelivery })),
+    c.html(
+      settingsPage({
+        brandName,
+        baseUrl: ports.config.baseUrl,
+        user: c.get('user'),
+        csrf: c.get('csrf'),
+        emailDelivery,
+        apiAccessEnabled,
+      }),
+    ),
   )
 
   app.post('/dashboard/settings', requireSession, async (c) => {
@@ -2094,8 +2137,16 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
 
     if (Object.keys(errors).length > 0) {
       return c.html(
-        settingsPage({ brandName, baseUrl: ports.config.baseUrl, user, csrf: c.get('csrf'),
- emailDelivery, slugValue: raw, errors }),
+        settingsPage({
+          brandName,
+          baseUrl: ports.config.baseUrl,
+          user,
+          csrf: c.get('csrf'),
+          emailDelivery,
+          apiAccessEnabled,
+          slugValue: raw,
+          errors,
+        }),
         400,
       )
     }
@@ -2121,6 +2172,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
             user,
             csrf: c.get('csrf'),
             emailDelivery,
+            apiAccessEnabled,
             slugValue: raw,
             errors: { slug: 'That slug is already taken' },
           }),
@@ -2137,6 +2189,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: { ...user, slug: raw },
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         notice: 'Slug updated. Links using the old address now show "not found".',
       }),
     )
@@ -2178,6 +2231,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           user,
           csrf: c.get('csrf'),
           emailDelivery,
+          apiAccessEnabled,
           nameValue: name,
           jobTitleValue: jobTitleRaw,
           companyValue: companyRaw,
@@ -2203,6 +2257,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: { ...user, name, company, jobTitle, companyUrl },
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         notice: 'Profile updated.',
       }),
     )
@@ -2273,8 +2328,18 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
 
     const user = c.get('user')
     const fail = (message: string) =>
-      c.html(settingsPage({ brandName, baseUrl: ports.config.baseUrl, user, csrf: c.get('csrf'),
- emailDelivery, errors: { avatar: message } }), 400)
+      c.html(
+        settingsPage({
+          brandName,
+          baseUrl: ports.config.baseUrl,
+          user,
+          csrf: c.get('csrf'),
+          emailDelivery,
+          apiAccessEnabled,
+          errors: { avatar: message },
+        }),
+        400,
+      )
 
     const stored = await storeUploadedImage(form.get('avatar'))
     if (!stored.ok) return fail(stored.message)
@@ -2291,6 +2356,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: { ...user, avatarKey: thumbKey },
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         notice: 'Photo updated.',
       }),
     )
@@ -2315,6 +2381,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: { ...user, avatarKey: null },
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         notice: 'Photo removed.',
       }),
     )
@@ -2340,6 +2407,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user: c.get('user'),
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         allUsers: await repos.users.listAll(),
         signups: { value, pinnedByEnv },
         companyLogo: await companyLogo(repos),
@@ -2515,6 +2583,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         user,
         csrf: c.get('csrf'),
         emailDelivery,
+        apiAccessEnabled,
         view,
         rows,
         truncated: found.length > BOOKINGS_LIST_LIMIT,
@@ -2607,6 +2676,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       user,
       csrf: c.get('csrf'),
       emailDelivery,
+      apiAccessEnabled,
       booking,
       eventType,
       canEditEventType: eventType !== null && (eventType.ownerUserId === user.id || access.managesTeam),
@@ -2712,7 +2782,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
   app.get('/dashboard/bookings/:id/reschedule', requireSession, async (c) => {
     const access = await hostBookingAccess(c)
     if (!access) return notFound(c)
-    const chrome = { brandName, user: c.get('user'), csrf: c.get('csrf'), emailDelivery }
+    const chrome = { brandName, user: c.get('user'), csrf: c.get('csrf'), emailDelivery, apiAccessEnabled }
     const base = { ...chrome, booking: access.booking, eventType: access.eventType }
 
     const blocked = rescheduleBlocker(access, ports.clock.now(), 'moved')
@@ -2733,7 +2803,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     if (!access) return notFound(c)
     const repos = c.get('repos')
     const user = c.get('user')
-    const base = { brandName, user, csrf: c.get('csrf'), emailDelivery, booking: access.booking, eventType: access.eventType }
+    const base = { brandName, user, csrf: c.get('csrf'), emailDelivery, apiAccessEnabled, booking: access.booking, eventType: access.eventType }
 
     const blocked = rescheduleBlocker(access, ports.clock.now(), 'moved')
     const eventType = access.eventType
@@ -3106,7 +3176,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     return c.html(
       shellHead({ title: `Cancelled · ${brandName}`, brandName }) +
         errorPage('Booking cancelled', 'The time has been released and the host has been notified.') +
-        shellFoot(),
+        shellFoot(false),
     )
   })
 
@@ -3244,14 +3314,14 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     return c.html(
       shellHead({ title: 'Not found', brandName }) +
         errorPage('Not found', 'That page does not exist, or is not yours.') +
-        shellFoot(),
+        shellFoot(false),
       404,
     )
   }
 
   function oauthError(c: Ctx, message: string): Response | Promise<Response> {
     return c.html(
-      shellHead({ title: 'Sign-in failed', brandName }) + errorPage('Sign-in failed', message) + shellFoot(),
+      shellHead({ title: 'Sign-in failed', brandName }) + errorPage('Sign-in failed', message) + shellFoot(false),
       400,
     )
   }

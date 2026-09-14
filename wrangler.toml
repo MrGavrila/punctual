@@ -86,7 +86,10 @@ BRAND_NAME = "Dr. Kisielowa"
 # Optional: the legal entity named on /privacy and /terms (defaults to
 # BRAND_NAME), and a live booking page to embed on your landing page.
 LEGAL_OPERATOR = "Irina Kisielowa"
-#DEMO_BOOKING_PATH = "/you/30min"
+DEMO_BOOKING_PATH = "/dr-kisielowa/introductory-call"
+PUBLIC_SITE_MODE = "booking-only"
+REST_API_ENABLED = "0"
+MCP_ENABLED = "0"
 FROM_EMAIL = "irina@kisielowa.com"
 FROM_NAME = "Dr. Irina Kisielowa"
 SUPPORT_EMAIL = "irina@kisielowa.com"

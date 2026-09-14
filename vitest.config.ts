@@ -35,6 +35,11 @@ export default defineConfig({
                 SIGNING_KEY: 'dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nLi4h',
                 BASE_URL: 'https://punctual.test',
                 BRAND_NAME: 'Punctual',
+                // Keep the upstream/full surface as the default test fixture;
+                // booking-only behavior has its own explicit integration suite.
+                PUBLIC_SITE_MODE: 'full',
+                REST_API_ENABLED: '1',
+                MCP_ENABLED: '1',
               },
             },
           }),
