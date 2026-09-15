@@ -666,10 +666,13 @@ function validDate(v: string | undefined): string | undefined {
 
 /** Hono's `c.html` can return a promise, so the helper mirrors that. */
 function notFound(c: Context<{ Bindings: Env }>, ports: EnginePorts): Response | Promise<Response> {
+  const head =
+    ports.config.publicSiteMode === 'booking-only'
+      ? publicBookingHead({ title: 'Not found', brandName: ports.config.brandName })
+      : shellHead({ title: 'Not found', brandName: ports.config.brandName })
+
   return c.html(
-    shellHead({ title: 'Not found', brandName: ports.config.brandName }) +
-      errorPage('Not found', 'That booking page does not exist.') +
-      shellFoot(false),
+    head + errorPage('Not found', 'That booking page does not exist.') + shellFoot(false),
     404,
   )
 }

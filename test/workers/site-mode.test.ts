@@ -47,6 +47,20 @@ describe('booking-only public site mode', () => {
     expect(await response.text()).not.toContain('https://punctual.sh')
   })
 
+  it.each(['/docs/self-hosting', '/dr-kisielowa/dashboard'])(
+    'uses Kisielowa branding on not-found page %s',
+    async (path) => {
+      const response = await request(path)
+      const html = await response.text()
+
+      expect(response.status).toBe(404)
+      expect(html).toContain(
+        '<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">',
+      )
+      expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+    },
+  )
+
   it('keeps owner, guest-support and legal routes available', async () => {
     for (const path of ['/login', '/privacy', '/terms', '/health', '/robots.txt']) {
       const response = await request(path)
