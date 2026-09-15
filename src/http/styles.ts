@@ -819,6 +819,7 @@ body{
   --pu-success-action-text:#fff;
   --pu-booking-accent:var(--pu-success-action);
   --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#628F82;
   --pu-booking-accent-tint:#E9F4F0;
   --pu-booking-accent-text:#176B55;--pu-booking-accent-on-fill:#fff;
   --pu-danger:#B53845;--pu-danger-800:#8E2934;
@@ -830,7 +831,7 @@ body{
   --pu-text-primary:#111;--pu-text-secondary:#555;--pu-text-muted:#666;--pu-text-disabled:#777;
   --pu-border-subtle:#ddd;--pu-border-strong:#888;--pu-border-focus:#333;
   --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#eee;
-  --pu-slot-available-bg:#fff;--pu-slot-available-border:#888;--pu-slot-available-text:#111;
+  --pu-slot-available-bg:#fff;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#111;
   --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#111;
   --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#111;
   --pu-slot-booked-bg:#eee;--pu-slot-booked-border:#ddd;--pu-slot-booked-text:#777;
@@ -864,10 +865,11 @@ body .pu-day[aria-disabled="true"]{
 body .pu-day[aria-selected="true"]{
   background:var(--pu-booking-day-selected-bg);color:var(--pu-booking-day-selected-text)}
 body .pu-day[aria-current="date"]{
-  box-shadow:inset 0 0 0 1px var(--pu-surface-raised),inset 0 0 0 3px var(--pu-booking-accent)}
+  box-shadow:inset 0 0 0 1px var(--pu-booking-accent)}
 body .pu-slot-available:active{
   background:var(--pu-booking-accent);border-color:var(--pu-booking-accent);
   color:var(--pu-booking-accent-on-fill)}
+body .pu-slot-chosen{border-color:var(--pu-booking-accent-border)}
 body .pu-slot-chosen .pu-dot-lg{background:var(--pu-booking-accent)}
 body .pu-tz-wrap{border-color:var(--pu-field-border)}
 
@@ -911,6 +913,7 @@ body textarea:focus-visible{
   --pu-success-action-text:#111;
   --pu-booking-accent:var(--pu-success-action);
   --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#4B806E;
   --pu-booking-accent-tint:#183129;
   --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
   --pu-danger:#E06C78;--pu-danger-800:#F0808A;
@@ -921,7 +924,7 @@ body textarea:focus-visible{
   --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
   --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
   --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
-  --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
+  --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#f5f5f5;
   --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
   --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
   --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
@@ -943,6 +946,7 @@ body textarea:focus-visible{
     --pu-success-action-text:#111;
     --pu-booking-accent:var(--pu-success-action);
     --pu-booking-accent-hover:var(--pu-success-action-hover);
+    --pu-booking-accent-border:#4B806E;
     --pu-booking-accent-tint:#183129;
     --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
     --pu-danger:#E06C78;--pu-danger-800:#F0808A;
@@ -953,7 +957,7 @@ body textarea:focus-visible{
     --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
     --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
     --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
-    --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:#888;--pu-slot-available-text:#f5f5f5;
+    --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#f5f5f5;
     --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
     --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
     --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
