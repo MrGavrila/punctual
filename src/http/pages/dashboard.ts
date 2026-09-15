@@ -209,6 +209,8 @@ function describedBy(id: string, errors: Record<string, string>): string {
 
 export interface LoginPageData {
   brandName: string
+  /** Optional deployment-specific favicon for the unauthenticated entry page. */
+  faviconHref?: string
   /** Providers with OAuth credentials configured. Empty is a normal deployment. */
   providers: CalendarProviderName[]
   /** True after a magic link request — identical for known and unknown addresses. */
@@ -287,7 +289,11 @@ export function loginPage(d: LoginPageData): string {
   }`
 
   return (
-    shellHead({ title: `Sign in · ${d.brandName}`, brandName: d.brandName }) +
+    shellHead({
+      title: `Sign in · ${d.brandName}`,
+      brandName: d.brandName,
+      ...(d.faviconHref ? { faviconHref: d.faviconHref } : {}),
+    }) +
     `<section class="pu-card" style="max-width:26rem;margin:3rem auto">${body}</section>` +
     shellFoot(false)
   )

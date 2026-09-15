@@ -168,7 +168,11 @@ const UPCOMING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 const OAUTH_STATE_COOKIE = 'punctual_oauth'
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
 
-export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): App {
+export function buildDashboardRoutes(
+  ports: EnginePorts,
+  slots: SlotService,
+  loginFaviconHref?: string,
+): App {
   const app: App = new Hono<{ Bindings: Env; Variables: Vars }>()
   const brandName = ports.config.brandName
   // Closed over beside brandName because it travels with it into every
@@ -275,7 +279,12 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
    */
   async function loginChrome() {
     const policy = await effectiveSignupPolicy(ports.repositories({ consistency: 'bookmark' }))
-    return { brandName, providers: ports.calendars.available(), signupsOpen: policy.mode === 'open' }
+    return {
+      brandName,
+      providers: ports.calendars.available(),
+      signupsOpen: policy.mode === 'open',
+      ...(loginFaviconHref ? { faviconHref: loginFaviconHref } : {}),
+    }
   }
 
   app.get('/login', async (c) => c.html(loginPage(await loginChrome())))

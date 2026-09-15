@@ -187,7 +187,14 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
   // `/:userSlug/:eventSlug` below swallows ANY two-segment path, so
   // `/dashboard/event-types` would resolve as a booking page for a host called
   // "dashboard" if this came after it.
-  app.route('/', buildDashboardRoutes(ports, slots))
+  app.route(
+    '/',
+    buildDashboardRoutes(
+      ports,
+      slots,
+      ports.config.publicSiteMode === 'booking-only' ? PUBLIC_BOOKING_FAVICON : undefined,
+    ),
+  )
 
   // Google's OAuth verification checks that both URLs resolve and describe the
   // handling of the scopes actually requested; a missing or generic page is a

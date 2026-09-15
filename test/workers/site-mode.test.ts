@@ -61,6 +61,17 @@ describe('booking-only public site mode', () => {
     },
   )
 
+  it('uses the Kisielowa favicon on the owner sign-in page', async () => {
+    const response = await request('/login')
+    const html = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(html).toContain(
+      '<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">',
+    )
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+  })
+
   it('keeps owner, guest-support and legal routes available', async () => {
     for (const path of ['/login', '/privacy', '/terms', '/health', '/robots.txt']) {
       const response = await request(path)
