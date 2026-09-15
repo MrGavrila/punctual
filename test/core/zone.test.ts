@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dayOfWeek,
+  formatInZone,
   localDateString,
   localDatesBetween,
   localTimeToInstant,
@@ -14,6 +15,19 @@ import {
 
 const HOUR = 3_600_000
 const MINUTE = 60_000
+
+describe('formatInZone', () => {
+  it('uses a 24-hour clock without changing the English date wording', () => {
+    const afternoon = Date.UTC(2026, 8, 15, 12, 30)
+
+    expect(formatInZone(afternoon, 'Europe/Berlin', { hour: 'numeric', minute: '2-digit' })).toBe(
+      '14:30',
+    )
+    expect(
+      formatInZone(afternoon, 'Europe/Berlin', { dateStyle: 'full', timeStyle: 'short' }),
+    ).toBe('Tuesday, September 15, 2026 at 14:30')
+  })
+})
 
 /**
  * These zones are chosen to cover structurally different failure modes rather

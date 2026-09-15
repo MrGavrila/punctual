@@ -133,7 +133,7 @@ describe('bookings list', () => {
     })
     expect(html).toContain('href="/dashboard/bookings/bk_1"')
     // 20:40 UTC is 23:40 in Kyiv — the host's zone, never the guest's.
-    expect(html).toContain('11:40 PM')
+    expect(html).toContain('23:40')
     expect(html).toContain('with Bob Host and Dana Host')
     expect(html).toContain('pu-badge pu-badge-dot">Confirmed</span>')
     expect(html).toContain('Showing the first 1.')
@@ -233,7 +233,7 @@ describe('reschedule page', () => {
     })
     expect(html).toContain('<h3 class="pu-day-heading">Thursday, September 10</h3>')
     expect(html).toContain(`href="/dashboard/bookings/bk_1/reschedule?start=${START + 86_400_000}"`)
-    expect(html).toContain('11:40 PM')
+    expect(html).toContain('23:40')
   })
 
   it('confirms in both zones and strikes the old time', () => {

@@ -271,7 +271,7 @@ export function formatInZone(
   opts: Intl.DateTimeFormatOptions = { dateStyle: 'full', timeStyle: 'short' },
   locale = 'en-US',
 ): string {
-  return new Intl.DateTimeFormat(locale, { ...opts, timeZone }).format(new Date(ts))
+  return new Intl.DateTimeFormat(locale, { ...opts, hourCycle: 'h23', timeZone }).format(new Date(ts))
 }
 
 /** e.g. `GMT+5:45`. Used where the offset itself matters to the reader. */
