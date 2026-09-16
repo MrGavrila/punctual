@@ -87,6 +87,7 @@ BRAND_NAME = "Dr. Kisielowa"
 # BRAND_NAME), and a live booking page to embed on your landing page.
 LEGAL_OPERATOR = "Irina Kisielowa"
 DEMO_BOOKING_PATH = "/dr-kisielowa/introductory-call"
+SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID = "evt_1DmGOFlbvszMY9vg"
 PUBLIC_SITE_MODE = "booking-only"
 REST_API_ENABLED = "0"
 MCP_ENABLED = "0"

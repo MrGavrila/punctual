@@ -231,6 +231,10 @@ export const bookings = sqliteTable(
     manageTokenHash: text('manage_token_hash').notNull(),
     cancelledAt: integer('cancelled_at'),
     createdAt: integer('created_at').notNull(),
+    // Present only while the configured single-booking policy applies to a
+    // confirmed future booking. NULL keeps historical and other event types
+    // outside the uniqueness constraint.
+    activeEmailKey: text('active_email_key'),
   },
   (t) => [
     index('bookings_host_start_idx').on(t.hostUserId, t.startUtc),
@@ -238,6 +242,7 @@ export const bookings = sqliteTable(
     index('bookings_event_type_idx').on(t.eventTypeId),
     uniqueIndex('bookings_manage_token_idx').on(t.manageTokenHash),
     index('bookings_guest_email_idx').on(t.guestEmail),
+    uniqueIndex('bookings_active_email_key_idx').on(t.activeEmailKey),
   ],
 )
 

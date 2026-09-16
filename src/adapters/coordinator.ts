@@ -106,6 +106,8 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
       try {
         const eventType = await repos.eventTypes.byId(request.eventTypeId)
         if (!eventType) return { ok: false, reason: 'policy', detail: 'unknown event type' }
+        const enforceSingleActiveEmail =
+          !request.rescheduleOf && ports.config.singleActiveBookingEventTypeId === eventType.id
 
         // ---- Leases for collective (ADR-0002 §3) ----------------------------
         // Ascending host id order makes deadlock impossible: every caller
@@ -198,8 +200,24 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
         }
 
         // ---- The write that actually arbitrates ---------------------------
-        written = await repos.bookings.createWithLocks(prepared.booking, prepared.buckets)
-        if (!written) return { ok: false, reason: 'slot_taken' }
+        written = await repos.bookings.createWithLocks(prepared.booking, prepared.buckets, {
+          enforceSingleActiveEmail,
+          now,
+        })
+        if (!written) {
+          if (
+            enforceSingleActiveEmail &&
+            (await repos.bookings.activeForEventEmail(eventType.id, request.guestEmail, now))
+          ) {
+            return {
+              ok: false,
+              reason: 'active_booking_exists',
+              detail:
+                'Only one upcoming booking is allowed per email. If you already booked, use your confirmation email to reschedule or cancel.',
+            }
+          }
+          return { ok: false, reason: 'slot_taken' }
+        }
         // From here on a real booking exists. The idempotency release in
         // `finally` must never fire past this point: if the `idempotency.put`
         // below throws (a transient D1 error) before setting

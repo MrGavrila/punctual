@@ -685,36 +685,81 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
      * read-then-write is the classic race this design exists to eliminate.
      * The constraint IS the check.
      */
-    async createWithLocks(booking, buckets) {
-      const statements: D1PreparedStatement[] = [
-        session
-          .prepare(
-            `INSERT INTO bookings
-             (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
-              start_utc,end_utc,local_date,status,answers_json,external_event_ids_json,reschedule_of,
-              rescheduled_to,manage_token_hash,cancelled_at,created_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          )
-          .bind(
-            booking.id, booking.eventTypeId, booking.hostUserId,
-            JSON.stringify(booking.hostUserIds), booking.guestName, booking.guestEmail,
-            booking.guestTimezone, booking.startUtc, booking.endUtc, booking.localDate, booking.status,
-            JSON.stringify(booking.answers), JSON.stringify(booking.externalEventIds),
-            booking.rescheduleOf, booking.rescheduledTo, booking.manageTokenHash,
-            booking.cancelledAt, booking.createdAt,
-          ),
-      ]
+    async createWithLocks(booking, buckets, policy) {
+      const enforceSingleActiveEmail = policy?.enforceSingleActiveEmail === true && !booking.rescheduleOf
+      const activeEmailKey = enforceSingleActiveEmail
+        ? `${booking.eventTypeId}\u0000${booking.guestEmail.trim().toLowerCase()}`
+        : null
+      const statements: D1PreparedStatement[] = []
 
-      for (const b of buckets) {
+      if (activeEmailKey) {
         statements.push(
           session
-            .prepare('INSERT INTO slot_locks (host_user_id,bucket_start,booking_id) VALUES (?,?,?)')
-            .bind(b.hostUserId, b.bucketStart, booking.id),
+            .prepare('UPDATE bookings SET active_email_key = NULL WHERE active_email_key = ? AND end_utc <= ?')
+            .bind(activeEmailKey, policy!.now),
         )
       }
 
+      const bookingInsert = activeEmailKey
+        ? session
+            .prepare(
+              `INSERT INTO bookings
+               (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
+                start_utc,end_utc,local_date,status,answers_json,external_event_ids_json,reschedule_of,
+                rescheduled_to,manage_token_hash,cancelled_at,created_at,active_email_key)
+               SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM bookings
+                 WHERE event_type_id = ? AND LOWER(TRIM(guest_email)) = ?
+                   AND status = 'confirmed' AND end_utc > ?
+               )
+               ON CONFLICT(active_email_key) DO NOTHING`,
+            )
+            .bind(
+              booking.id, booking.eventTypeId, booking.hostUserId,
+              JSON.stringify(booking.hostUserIds), booking.guestName, booking.guestEmail,
+              booking.guestTimezone, booking.startUtc, booking.endUtc, booking.localDate, booking.status,
+              JSON.stringify(booking.answers), JSON.stringify(booking.externalEventIds),
+              booking.rescheduleOf, booking.rescheduledTo, booking.manageTokenHash,
+              booking.cancelledAt, booking.createdAt, activeEmailKey,
+              booking.eventTypeId, booking.guestEmail.trim().toLowerCase(), policy!.now,
+            )
+        : session
+            .prepare(
+              `INSERT INTO bookings
+               (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
+                start_utc,end_utc,local_date,status,answers_json,external_event_ids_json,reschedule_of,
+                rescheduled_to,manage_token_hash,cancelled_at,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            )
+            .bind(
+              booking.id, booking.eventTypeId, booking.hostUserId,
+              JSON.stringify(booking.hostUserIds), booking.guestName, booking.guestEmail,
+              booking.guestTimezone, booking.startUtc, booking.endUtc, booking.localDate, booking.status,
+              JSON.stringify(booking.answers), JSON.stringify(booking.externalEventIds),
+              booking.rescheduleOf, booking.rescheduledTo, booking.manageTokenHash,
+              booking.cancelledAt, booking.createdAt,
+            )
+      const bookingInsertIndex = statements.length
+      statements.push(bookingInsert)
+
+      for (const b of buckets) {
+        const statement = activeEmailKey
+          ? session
+              .prepare(
+                `INSERT INTO slot_locks (host_user_id,bucket_start,booking_id)
+                 SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ?)`,
+              )
+              .bind(b.hostUserId, b.bucketStart, booking.id, booking.id)
+          : session
+              .prepare('INSERT INTO slot_locks (host_user_id,bucket_start,booking_id) VALUES (?,?,?)')
+              .bind(b.hostUserId, b.bucketStart, booking.id)
+        statements.push(statement)
+      }
+
       try {
-        await session.batch(statements)
+        const results = await session.batch(statements)
+        if ((results[bookingInsertIndex]?.meta.changes ?? 0) === 0) return null
         return booking
       } catch (err) {
         // A UNIQUE/PK violation means someone else won the race for a bucket.
@@ -722,6 +767,18 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
         if (isConstraintViolation(err)) return null
         throw err
       }
+    },
+
+    async activeForEventEmail(eventTypeId, guestEmail, now) {
+      return mapBooking(await first(
+        `SELECT * FROM bookings
+         WHERE event_type_id = ? AND LOWER(TRIM(guest_email)) = ?
+           AND status = 'confirmed' AND end_utc > ?
+         ORDER BY end_utc LIMIT 1`,
+        eventTypeId,
+        guestEmail.trim().toLowerCase(),
+        now,
+      ))
     },
 
     /**
@@ -810,7 +867,9 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
       const results = await session.batch([
         session
           .prepare(
-            "UPDATE bookings SET status = 'cancelled', cancelled_at = ? WHERE id = ? AND status = 'confirmed'",
+            `UPDATE bookings
+             SET status = 'cancelled', cancelled_at = ?, active_email_key = NULL
+             WHERE id = ? AND status = 'confirmed'`,
           )
           .bind(at, bookingId),
         ...tasks.map((task) => deliveryTaskInsert(
@@ -823,7 +882,7 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
       return (results[0]?.meta.changes ?? 0) > 0
     },
 
-    async markRescheduled(bookingId, newBookingId, tasks = []) {
+    async markRescheduled(bookingId, newBookingId, tasks = [], transferActiveEmailKey = false) {
       // Same guard as cancel: without `status = 'confirmed'` here, two
       // concurrent reschedules of the same booking can each create a real,
       // confirmed replacement, and this UPDATE would just silently pick
@@ -835,6 +894,27 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
             "UPDATE bookings SET status = 'rescheduled', rescheduled_to = ? WHERE id = ? AND status = 'confirmed'",
           )
           .bind(newBookingId, bookingId),
+        session
+          .prepare(
+            `UPDATE bookings SET active_email_key = NULL
+             WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?`,
+          )
+          .bind(bookingId, newBookingId),
+        ...(transferActiveEmailKey
+          ? [
+              session
+                .prepare(
+                  `UPDATE OR IGNORE bookings
+                   SET active_email_key = event_type_id || char(0) || LOWER(TRIM(guest_email))
+                   WHERE id = ? AND status = 'confirmed'
+                     AND EXISTS (
+                       SELECT 1 FROM bookings
+                       WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?
+                     )`,
+                )
+                .bind(newBookingId, bookingId, newBookingId),
+            ]
+          : []),
         ...tasks.map((task) => deliveryTaskInsert(
           task,
           "SELECT 1 FROM bookings WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?",

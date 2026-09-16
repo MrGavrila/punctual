@@ -1166,7 +1166,12 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
       `rescheduled:${outcome.booking.id}`,
       ports.clock.now(),
     )
-    const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id, [cleanup])
+    const moved = await repos.bookings.markRescheduled(
+      original.id,
+      outcome.booking.id,
+      [cleanup],
+      ports.config.singleActiveBookingEventTypeId === eventType.id,
+    )
     if (!moved) {
       await repos.bookings.cancelWithLockRelease(outcome.booking.id, ports.clock.now())
       await ports.queue
@@ -1323,7 +1328,7 @@ export function notFound(what: string): Response {
 
 /** One mapping from a coordinator refusal to a status code, for REST and MCP. */
 export function bookingFailure(
-  reason: 'slot_taken' | 'outside_availability' | 'policy' | 'lease_failed',
+  reason: 'slot_taken' | 'outside_availability' | 'active_booking_exists' | 'policy' | 'lease_failed',
   detail?: string,
 ): Response {
   switch (reason) {
@@ -1331,6 +1336,8 @@ export function bookingFailure(
       return problem(409, 'Slot taken', detail ?? 'That time was booked while this request was in flight.')
     case 'outside_availability':
       return problem(409, 'Outside availability', detail ?? 'That time is not bookable for this event type.')
+    case 'active_booking_exists':
+      return problem(409, 'Upcoming booking exists', detail ?? 'Only one upcoming booking is allowed per email.')
     case 'lease_failed':
       // Retryable, unlike the two above: nothing is wrong with the request.
       return problem(503, 'Busy', 'Another booking is being committed for these hosts. Retry shortly.', {

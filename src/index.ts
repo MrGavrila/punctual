@@ -41,6 +41,7 @@ export interface Env {
   BRAND_NAME?: string
   LEGAL_OPERATOR?: string
   DEMO_BOOKING_PATH?: string
+  SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID?: string
   /** `booking-only` redirects `/` to DEMO_BOOKING_PATH and hides marketing/docs routes. */
   PUBLIC_SITE_MODE?: string
   /** Strict `1`/`0` feature flags; invalid values fail deployment startup. */
@@ -198,6 +199,9 @@ export function buildPorts(env: Env): EnginePorts {
       brandName: env.BRAND_NAME ?? 'Punctual',
       ...(env.LEGAL_OPERATOR ? { legalOperator: env.LEGAL_OPERATOR } : {}),
       ...(env.DEMO_BOOKING_PATH ? { demoBookingPath: env.DEMO_BOOKING_PATH } : {}),
+      ...(env.SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID?.trim()
+        ? { singleActiveBookingEventTypeId: env.SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID.trim() }
+        : {}),
       publicSiteMode,
       restApiEnabled,
       mcpEnabled,

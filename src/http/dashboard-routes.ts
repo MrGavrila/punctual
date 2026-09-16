@@ -3036,7 +3036,12 @@ export function buildDashboardRoutes(
     // confirmed, but orphaned duplicate. It must be released, not left live.
     const movedAt = ports.clock.now()
     const cleanup = calendarDeleteDeliveryTask(old.id, `rescheduled:${outcome.booking.id}`, movedAt)
-    const moved = await repos.bookings.markRescheduled(old.id, outcome.booking.id, [cleanup])
+    const moved = await repos.bookings.markRescheduled(
+      old.id,
+      outcome.booking.id,
+      [cleanup],
+      ports.config.singleActiveBookingEventTypeId === eventType.id,
+    )
     if (!moved) {
       await repos.bookings.cancelWithLockRelease(outcome.booking.id, ports.clock.now())
       await ports.queue

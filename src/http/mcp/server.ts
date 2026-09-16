@@ -761,7 +761,12 @@ async function rescheduleBooking(
     `rescheduled:${outcome.booking.id}`,
     deps.ports.clock.now(),
   )
-  const moved = await repos.bookings.markRescheduled(original.id, outcome.booking.id, [cleanup])
+  const moved = await repos.bookings.markRescheduled(
+    original.id,
+    outcome.booking.id,
+    [cleanup],
+    deps.ports.config.singleActiveBookingEventTypeId === eventType.id,
+  )
   if (!moved) {
     await repos.bookings.cancelWithLockRelease(outcome.booking.id, deps.ports.clock.now())
     await deps.ports.queue
@@ -896,7 +901,7 @@ function bookingSummary(
 
 /** Phrased for a model that has to decide what to do next, not for a log. */
 function failureMessage(
-  reason: 'slot_taken' | 'outside_availability' | 'policy' | 'lease_failed',
+  reason: 'slot_taken' | 'outside_availability' | 'active_booking_exists' | 'policy' | 'lease_failed',
   detail?: string,
 ): string {
   switch (reason) {
@@ -904,6 +909,8 @@ function failureMessage(
       return 'That time was taken while this request was in flight. Call get_available_slots again and choose another slot.'
     case 'outside_availability':
       return 'That time is not bookable — it is outside the host\'s availability, too soon, or past the booking horizon. Use a start returned by get_available_slots.'
+    case 'active_booking_exists':
+      return detail ?? 'Only one upcoming booking is allowed per email.'
     case 'lease_failed':
       return 'Another booking is being committed for these hosts right now. Retry this call in a moment.'
     case 'policy':

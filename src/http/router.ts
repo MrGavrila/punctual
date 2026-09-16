@@ -580,11 +580,24 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       // A listed slot can be lost — replicas lag, and round-robin listings are
       // advisory about who. Expected, so it reads as a step, not a failure.
       const body =
-        outcome.reason === 'slot_taken' || outcome.reason === 'outside_availability'
+        outcome.reason === 'active_booking_exists'
+          ? confirmForm(data, start, {
+              errors: {
+                email:
+                  outcome.detail ??
+                  'Only one upcoming booking is allowed per email. Use your confirmation email to reschedule or cancel.',
+              },
+              values: { name, email, ...declared },
+              holdId,
+            })
+          : outcome.reason === 'slot_taken' || outcome.reason === 'outside_availability'
           ? slotTakenPage(data, localDateString(start, guestTimezone))
           : errorPage('Could not complete booking', outcome.detail ?? 'Please try another time.')
       return c.html(
-        publicBookingHead({ title: 'Time unavailable', brandName: ports.config.brandName }) +
+        publicBookingHead({
+          title: outcome.reason === 'active_booking_exists' ? `Confirm · ${eventType.title}` : 'Time unavailable',
+          brandName: ports.config.brandName,
+        }) +
           eventHeader(data) +
           body +
           publicBookingFoot(embed),

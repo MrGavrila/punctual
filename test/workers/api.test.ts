@@ -11,10 +11,10 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
-import { applyD1Migrations, env } from 'cloudflare:test'
+import { applyD1Migrations, createExecutionContext, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { buildPorts, type Env } from '../../src/index.js'
-import { createSlotService } from '../../src/engine.js'
+import { createEngine, createSlotService } from '../../src/engine.js'
 import { buildApiRoutes, toInstant } from '../../src/http/api/rest.js'
 import { buildMcpRoutes } from '../../src/http/mcp/server.js'
 import { buildEmbedRoutes, embedScript } from '../../src/http/embed.js'
@@ -961,6 +961,109 @@ describe('team event types through the API', () => {
 })
 
 describe('POST /bookings', () => {
+  it('allows only one future booking for the configured event type and normalized email', async () => {
+    const ports = testPorts()
+    const queued: unknown[] = []
+    ports.queue = {
+      async send(message) { queued.push(message) },
+      async sendBatch(messages) { queued.push(...messages) },
+    }
+    const app = buildApp(ports)
+    const seed = await seedHost(ports)
+    ports.config.singleActiveBookingEventTypeId = seed.eventType.id
+    const { from, to } = nextWeek()
+    const listed = await app.request(
+      `/api/v1/slots?eventTypeId=${seed.eventType.id}&from=${from}&to=${to}`,
+      { headers: auth(seed.apiKey) },
+    )
+    const slots = ((await listed.json()) as { data: SlotJson[] }).data
+    const first = slots[0]!
+    const later = slots.find((slot) => slot.start.epochMs >= first.start.epochMs + 60 * 60_000)!
+    const headers = { ...auth(seed.apiKey), 'content-type': 'application/json' }
+    const body = (start: string, guestEmail: string) => JSON.stringify({
+      eventTypeId: seed.eventType.id,
+      start,
+      guestName: 'Guest',
+      guestEmail,
+    })
+
+    expect((await app.request('/api/v1/bookings', {
+      method: 'POST', headers, body: body(first.start.iso, 'Guest@Example.com'),
+    })).status).toBe(201)
+    expect(queued).toHaveLength(1)
+
+    const duplicate = await app.request('/api/v1/bookings', {
+      method: 'POST', headers, body: body(later.start.iso, 'guest@example.com'),
+    })
+    expect(duplicate.status).toBe(409)
+    expect(((await duplicate.json()) as { detail: string }).detail).toContain('one upcoming booking')
+
+    const afterRejection = await env.DB.prepare(
+      'SELECT COUNT(*) AS bookings FROM bookings WHERE event_type_id = ?',
+    ).bind(seed.eventType.id).first<{ bookings: number }>()
+    expect(afterRejection?.bookings).toBe(1)
+    expect(queued).toHaveLength(1)
+
+    expect((await app.request('/api/v1/bookings', {
+      method: 'POST', headers, body: body(later.start.iso, 'other@example.com'),
+    })).status).toBe(201)
+    expect(queued).toHaveLength(2)
+  })
+
+  it('returns the public confirmation form with entered values when an upcoming booking exists', async () => {
+    const ports = testPorts()
+    const api = buildApp(ports)
+    const engine = createEngine(ports)
+    const seed = await seedHost(ports)
+    ports.config.singleActiveBookingEventTypeId = seed.eventType.id
+    const { from, to } = nextWeek()
+    const listed = await api.request(
+      `/api/v1/slots?eventTypeId=${seed.eventType.id}&from=${from}&to=${to}`,
+      { headers: auth(seed.apiKey) },
+    )
+    const slots = ((await listed.json()) as { data: SlotJson[] }).data
+    const first = slots[0]!
+    const later = slots.find((slot) => slot.start.epochMs >= first.start.epochMs + 60 * 60_000)!
+
+    const created = await api.request('/api/v1/bookings', {
+      method: 'POST',
+      headers: { ...auth(seed.apiKey), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        eventTypeId: seed.eventType.id,
+        start: first.start.iso,
+        guestName: 'Existing Guest',
+        guestEmail: 'Guest@Example.com',
+      }),
+    })
+    expect(created.status).toBe(201)
+
+    const form = new URLSearchParams({
+      start: String(later.start.epochMs),
+      tz: 'UTC',
+      name: 'Existing Guest',
+      email: 'guest@example.com',
+    })
+    const response = await engine.fetch(
+      new Request(`https://punctual.test/${seed.user.slug}/${seed.eventType.slug}/confirm`, {
+        method: 'POST',
+        headers: {
+          'cf-connecting-ip': `203.0.113.${1 + Math.floor(Math.random() * 250)}`,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: form,
+      }),
+      env,
+      createExecutionContext(),
+    )
+
+    expect(response.status).toBe(409)
+    const html = await response.text()
+    expect(html).toContain('Only one upcoming booking is allowed per email')
+    expect(html).toContain('value="Existing Guest"')
+    expect(html).toContain('value="guest@example.com"')
+    expect(html).not.toContain('Guest@Example.com')
+  })
+
   it('books a slot and lists it back', async () => {
     const ports = testPorts()
     const app = buildApp(ports)
@@ -1062,6 +1165,7 @@ describe('POST /bookings', () => {
     const ports = testPorts()
     const app = buildApp(ports)
     const seed = await seedHost(ports)
+    ports.config.singleActiveBookingEventTypeId = seed.eventType.id
     const slot = await firstSlot(app, seed.apiKey, seed.eventType.id)
 
     const payload = JSON.stringify({
@@ -1602,7 +1706,7 @@ describe('toInstant', () => {
   })
 })
 
-describe('placeholder BASE_URL', () => {
+describe('buildPorts configuration', () => {
   it('refuses to build ports rather than quietly generating dead links', () => {
     // The template ships BASE_URL as a placeholder; a self-hoster who
     // replaces only the resource ids and deploys must hit a clear error,
@@ -1615,5 +1719,16 @@ describe('placeholder BASE_URL', () => {
         SIGNING_KEY: keyMaterial(9),
       } as Env),
     ).toThrow(/BASE_URL/)
+  })
+
+  it('loads and trims the optional single-booking event type id', () => {
+    const ports = buildPorts({
+      ...env,
+      BASE_URL: 'https://punctual.test',
+      ENCRYPTION_KEY_V1: keyMaterial(1),
+      SIGNING_KEY: keyMaterial(9),
+      SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID: '  evt_intro  ',
+    } as Env)
+    expect(ports.config.singleActiveBookingEventTypeId).toBe('evt_intro')
   })
 })

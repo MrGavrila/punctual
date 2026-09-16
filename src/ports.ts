@@ -269,10 +269,18 @@ export interface BookingRepository {
    * Verified against production D1 on 2026-08-14: a constraint
    * violation mid-batch rolls back every prior statement.
    *
-   * @returns the booking on success; `null` when a bucket was already taken —
-   *          the caller turns that into a 409, never a retry loop.
+   * @returns the booking on success; `null` when a bucket was already taken
+   *          or an enabled single-active-email policy rejected the row. The
+   *          caller distinguishes those outcomes and returns a 409.
    */
-  createWithLocks(booking: Booking, buckets: BucketClaim[]): Promise<Booking | null>
+  createWithLocks(
+    booking: Booking,
+    buckets: BucketClaim[],
+    policy?: { enforceSingleActiveEmail: boolean; now: number },
+  ): Promise<Booking | null>
+
+  /** A confirmed booking for this event/email that has not ended yet. */
+  activeForEventEmail(eventTypeId: string, guestEmail: string, now: number): Promise<Booking | null>
 
   /**
    * Change who hosts an existing booking, keeping the invariant: the new
@@ -311,7 +319,12 @@ export interface BookingRepository {
   /** @returns false if the booking was no longer `confirmed` — a concurrent cancel/reschedule won the race. */
   cancelWithLockRelease(bookingId: string, at: number, tasks?: DeliveryTaskDraft[]): Promise<boolean>
   /** @returns false if the booking was no longer `confirmed` — the caller must roll back the new booking it just created. */
-  markRescheduled(bookingId: string, newBookingId: string, tasks?: DeliveryTaskDraft[]): Promise<boolean>
+  markRescheduled(
+    bookingId: string,
+    newBookingId: string,
+    tasks?: DeliveryTaskDraft[],
+    transferActiveEmailKey?: boolean,
+  ): Promise<boolean>
   rotateManageToken(bookingId: string, tokenHash: string): Promise<void>
 
   /**
@@ -857,7 +870,11 @@ export type BookingOutcome =
    * a retry can confirm the booking exists but cannot re-issue its link.
    */
   | { ok: true; booking: Booking; manageToken?: string }
-  | { ok: false; reason: 'slot_taken' | 'outside_availability' | 'policy' | 'lease_failed'; detail?: string }
+  | {
+      ok: false
+      reason: 'slot_taken' | 'outside_availability' | 'active_booking_exists' | 'policy' | 'lease_failed'
+      detail?: string
+    }
 
 // ---------------------------------------------------------------------------
 // Rate limiting
@@ -909,6 +926,11 @@ export interface EngineConfig {
    * make every such deployment's own homepage embed a 404ing iframe.
    */
   demoBookingPath?: string
+  /**
+   * Event type whose public booking flow permits at most one confirmed,
+   * future booking per normalized guest email. Unset disables the policy.
+   */
+  singleActiveBookingEventTypeId?: string
   /** Public surface exposed by this deployment. Defaults to the full product site. */
   publicSiteMode?: 'full' | 'booking-only'
   /** Whether authenticated REST API routes are mounted. Defaults to true. */

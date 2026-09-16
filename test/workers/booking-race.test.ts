@@ -217,6 +217,154 @@ describe('slot_locks is the invariant', () => {
     expect(locks?.n).toBe(6)
   })
 
+  it('allows only one concurrent future booking for the same normalized email when the policy is enabled', async () => {
+    const attempts = Array.from({ length: 5 }, (_, i) => {
+      const prepared = prepareBooking({
+        eventType: eventType(),
+        hosts: [host('h1')],
+        start: START + i * 60 * 60_000,
+        guestName: `Email racer ${i}`,
+        guestEmail: i % 2 === 0 ? 'GUEST@example.com' : 'guest@example.com',
+        guestTimezone: 'UTC',
+        answers: {},
+        now: NOW,
+        bookingId: `bk_email_racer${i}`,
+        manageTokenHash: `hash_email_racer${i}`,
+      })
+      if (!prepared.ok) throw new Error('prepare failed')
+      return repos().bookings.createWithLocks(prepared.booking, prepared.buckets, {
+        enforceSingleActiveEmail: true,
+        now: NOW,
+      })
+    })
+
+    const results = await Promise.all(attempts)
+    const confirmed = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM bookings WHERE LOWER(TRIM(guest_email)) = 'guest@example.com' AND status = 'confirmed'",
+    ).first<{ n: number }>()
+    expect(confirmed?.n).toBe(1)
+    expect(results.filter((result) => result !== null)).toHaveLength(1)
+  })
+
+  it('transfers the email allowance on reschedule and releases it when the replacement is cancelled', async () => {
+    const make = (id: string, start: number, rescheduleOf: string | null = null) => {
+      const prepared = prepareBooking({
+        eventType: eventType(),
+        hosts: [host('h1')],
+        start,
+        guestName: id,
+        guestEmail: 'guest@example.com',
+        guestTimezone: 'UTC',
+        answers: {},
+        now: NOW,
+        bookingId: id,
+        manageTokenHash: `hash_${id}`,
+        rescheduleOf,
+      })
+      if (!prepared.ok) throw new Error('prepare failed')
+      return prepared
+    }
+    const policy = { enforceSingleActiveEmail: true, now: NOW }
+    const original = make('bk_email_original', START)
+    expect(await repos().bookings.createWithLocks(original.booking, original.buckets, policy)).not.toBeNull()
+
+    const replacement = make('bk_email_replacement', START + 60 * 60_000, original.booking.id)
+    expect(await repos().bookings.createWithLocks(replacement.booking, replacement.buckets, policy)).not.toBeNull()
+    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id, [], true)).toBe(true)
+    expect(await repos().bookings.cancelWithLockRelease(replacement.booking.id, NOW)).toBe(true)
+
+    const next = make('bk_email_after_cancel', START + 2 * 60 * 60_000)
+    expect(await repos().bookings.createWithLocks(next.booking, next.buckets, policy)).not.toBeNull()
+  })
+
+  it('does not attach an active email key when the policy is disabled during reschedule', async () => {
+    const make = (id: string, start: number, rescheduleOf: string | null = null) => {
+      const prepared = prepareBooking({
+        eventType: eventType(),
+        hosts: [host('h1')],
+        start,
+        guestName: id,
+        guestEmail: 'guest@example.com',
+        guestTimezone: 'UTC',
+        answers: {},
+        now: NOW,
+        bookingId: id,
+        manageTokenHash: `hash_${id}`,
+        rescheduleOf,
+      })
+      if (!prepared.ok) throw new Error('prepare failed')
+      return prepared
+    }
+    const original = make('bk_unscoped_original', START)
+    const replacement = make('bk_unscoped_replacement', START + 60 * 60_000, original.booking.id)
+    expect(await repos().bookings.createWithLocks(original.booking, original.buckets)).not.toBeNull()
+    expect(await repos().bookings.createWithLocks(replacement.booking, replacement.buckets)).not.toBeNull()
+    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id)).toBe(true)
+
+    const row = await env.DB.prepare(
+      'SELECT active_email_key FROM bookings WHERE id = ?',
+    ).bind(replacement.booking.id).first<{ active_email_key: string | null }>()
+    expect(row?.active_email_key).toBeNull()
+  })
+
+  it('blocks a new booking when a legacy active row has no policy key', async () => {
+    const make = (id: string, start: number) => {
+      const prepared = prepareBooking({
+        eventType: eventType(),
+        hosts: [host('h1')],
+        start,
+        guestName: id,
+        guestEmail: id === 'legacy' ? ' Guest@Example.com ' : 'guest@example.com',
+        guestTimezone: 'UTC',
+        answers: {},
+        now: NOW,
+        bookingId: `bk_${id}`,
+        manageTokenHash: `hash_${id}`,
+      })
+      if (!prepared.ok) throw new Error('prepare failed')
+      return prepared
+    }
+
+    const legacy = make('legacy', START)
+    expect(await repos().bookings.createWithLocks(legacy.booking, legacy.buckets)).not.toBeNull()
+    const attempted = make('new', START + 60 * 60_000)
+    expect(await repos().bookings.createWithLocks(attempted.booking, attempted.buckets, {
+      enforceSingleActiveEmail: true,
+      now: NOW,
+    })).toBeNull()
+  })
+
+  it('releases the policy at the exact end time and scopes it to one event type', async () => {
+    const make = (id: string, start: number, type: EventType) => {
+      const prepared = prepareBooking({
+        eventType: type,
+        hosts: [host('h1')],
+        start,
+        guestName: id,
+        guestEmail: 'guest@example.com',
+        guestTimezone: 'UTC',
+        answers: {},
+        now: NOW,
+        bookingId: `bk_${id}`,
+        manageTokenHash: `hash_${id}`,
+      })
+      if (!prepared.ok) throw new Error('prepare failed')
+      return prepared
+    }
+    const policy = { enforceSingleActiveEmail: true, now: NOW }
+    const first = make('boundary_first', START, eventType())
+    expect(await repos().bookings.createWithLocks(first.booking, first.buckets, policy)).not.toBeNull()
+
+    const otherEvent = make('other_event', START + 60 * 60_000, eventType({ id: 'et2' }))
+    expect(await repos().bookings.createWithLocks(otherEvent.booking, otherEvent.buckets, policy)).not.toBeNull()
+
+    const afterEnd = make('after_end', START + 2 * 60 * 60_000, eventType())
+    expect(await repos().bookings.createWithLocks(afterEnd.booking, afterEnd.buckets, {
+      enforceSingleActiveEmail: true,
+      now: first.booking.endUtc,
+    })).not.toBeNull()
+  })
+
   it('adjacent bookings do not collide — half-open intervals', async () => {
     const mk = (id: string, start: number) => {
       const p = prepareBooking({
