@@ -256,7 +256,27 @@ ${pre(`npx wrangler secret put RESEND_API_KEY\n# or\nnpx wrangler secret put BRE
   configured &mdash; booking confirmations that land in spam are worse than
   no email at all.</p>
 
-<h2>7. Make it yours</h2>
+<h2>7. Protect public booking creation with Turnstile (optional)</h2>
+<p>Create one <strong>Managed</strong> Turnstile widget for the exact hostname
+  serving your booking pages. Keep protection disabled while both keys are
+  configured:</p>
+${pre(`[vars]\nTURNSTILE_ENABLED = "0"\nTURNSTILE_SITE_KEY = "<public sitekey>"\n\nnpx wrangler secret put TURNSTILE_SECRET_KEY`)}
+<p>Deploy once with protection disabled, then set
+  <code>TURNSTILE_ENABLED = "1"</code> and deploy again. The widget appears
+  only on the final guest confirmation form. The existing IP limiter remains
+  first; REST, MCP, owner dashboard and guest manage routes are unchanged.</p>
+<p class="pu-muted">When enabled, missing keys, invalid configuration, a
+  Siteverify outage or a five-second timeout fail only new public bookings
+  closed. The server requires the exact hostname from <code>BASE_URL</code>
+  and action <code>booking_create</code>. If your proxy adds a Content Security
+  Policy, allow <code>https://challenges.cloudflare.com</code> in
+  <code>script-src</code> and <code>frame-src</code>.</p>
+<div class="pu-docs-callout"><p><strong>Rollback:</strong> set
+  <code>TURNSTILE_ENABLED = "0"</code> and deploy. The application never
+  bypasses or disables verification automatically after a provider failure;
+  the IP and single-active-booking limits remain in place.</p></div>
+
+<h2>8. Make it yours</h2>
 <p><strong>Sign in first &mdash; you're the admin.</strong> The first account
   created on a fresh deployment gets the admin role: an <strong>Admin</strong>
   page appears in the dashboard with the user list (grant or remove admin;
@@ -316,6 +336,8 @@ ${pre(`git pull\nnpm run migrate\nnpm run deploy`)}
 <tr><td class="pu-time">TELEMETRY_ENABLED</td><td>[vars]</td><td>0 by default &mdash; see below</td></tr>
 <tr><td class="pu-time">SIGNUPS</td><td>secret or [vars]</td><td>Pins the sign-up policy: open, closed, or a comma list of emails and @domains. Unset (the default), admins manage it from the dashboard's Admin page &mdash; existing users always sign in either way</td></tr>
 <tr><td class="pu-time">DEMO_BOOKING_PATH</td><td>[vars]</td><td>A live booking page on this deployment (e.g. /jo/30min), embedded on the landing page</td></tr>
+<tr><td class="pu-time">TURNSTILE_ENABLED</td><td>[vars]</td><td>0 by default; set to 1 only after both keys are configured</td></tr>
+<tr><td class="pu-time">TURNSTILE_SITE_KEY</td><td>[vars]</td><td>Public sitekey rendered only on the guest confirmation form</td></tr>
 <tr><td class="pu-time">GA_MEASUREMENT_ID</td><td>[vars]</td><td>Unset by default. A GA4 id (G-XXXXXXXXXX) loads Google Analytics on the marketing/docs pages ONLY &mdash; never on a booking page or the dashboard</td></tr>
 <tr><td class="pu-time">ENCRYPTION_KEY_V1</td><td>secret</td><td>AES-GCM key for calendar tokens</td></tr>
 <tr><td class="pu-time">SIGNING_KEY</td><td>secret</td><td>HMAC key for guest manage links</td></tr>
@@ -323,6 +345,7 @@ ${pre(`git pull\nnpm run migrate\nnpm run deploy`)}
 <tr><td class="pu-time">MICROSOFT_CLIENT_ID / _SECRET</td><td>secret</td><td>Your Microsoft app</td></tr>
 <tr><td class="pu-time">RESEND_API_KEY</td><td>secret</td><td>Omit to log emails instead of sending</td></tr>
 <tr><td class="pu-time">BREVO_API_KEY</td><td>secret</td><td>Alternative to Resend; Resend wins if both are set</td></tr>
+<tr><td class="pu-time">TURNSTILE_SECRET_KEY</td><td>secret</td><td>Private credential used only for server-side Siteverify calls</td></tr>
 </tbody>
 </table></div>
 

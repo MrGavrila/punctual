@@ -21,10 +21,11 @@ import { createCalendarProviders } from './adapters/providers.js'
 import { createCoordinator } from './adapters/coordinator.js'
 import { createQueueAdapter } from './adapters/queue/index.js'
 import { createRateLimiterAdapter } from './adapters/rate-limiter.js'
+import { createTurnstileVerifier } from './adapters/turnstile.js'
 import { handleOne, handleQueueBatch } from './adapters/queue/consumer.js'
 import { runScheduledTasks } from './adapters/scheduled.js'
 import { parseSignupPolicy } from './core/domain/auth-flows.js'
-import type { EmailDelivery, EnginePorts, RequestScope } from './ports.js'
+import { TURNSTILE_BOOKING_ACTION, type EmailDelivery, type EnginePorts, type RequestScope } from './ports.js'
 
 export { HostCalendar } from './do/host-calendar.js'
 export { RateLimiter } from './do/rate-limiter.js'
@@ -47,6 +48,12 @@ export interface Env {
   /** Strict `1`/`0` feature flags; invalid values fail deployment startup. */
   REST_API_ENABLED?: string
   MCP_ENABLED?: string
+  /** Protects only the public guest booking commit. Invalid non-zero values fail that write closed. */
+  TURNSTILE_ENABLED?: string
+  /** Public widget identifier. Safe in rendered HTML; configured as a Worker variable. */
+  TURNSTILE_SITE_KEY?: string
+  /** Private Siteverify credential. Configure only as a Worker secret. */
+  TURNSTILE_SECRET_KEY?: string
   /** GA4 measurement id for the marketing/docs pages only — see EngineConfig.analyticsId in ports.ts. */
   GA_MEASUREMENT_ID?: string
   /** Signup policy: unset/"open", "closed", or a comma list of emails/@domains — see `SignupPolicy` in ports.ts. Set as a secret/var per deployment; never a public-repo default, which would lock a fresh self-hoster out of their own instance. */
@@ -181,6 +188,27 @@ export function buildPorts(env: Env): EnginePorts {
     await handleOne(message, portsRef)
   })
   const rateLimiter = createRateLimiterAdapter(env.RATE_LIMITER)
+  // Unlike core key material, incomplete Turnstile configuration must not
+  // take the whole Worker (including owner routes) down. Any value other than
+  // an explicit 0/unset requests protection; only an exact 1 is considered a
+  // valid flag, so a typo fails the public booking write closed rather than
+  // silently disabling it.
+  const turnstileEnabled = env.TURNSTILE_ENABLED !== undefined && env.TURNSTILE_ENABLED !== '0'
+  const turnstileFlagValid = env.TURNSTILE_ENABLED === '1'
+  let turnstileHostname: string | undefined
+  try {
+    turnstileHostname = new URL(baseUrl).hostname
+  } catch {
+    // The adapter reports misconfigured for the protected public write. Other
+    // routes remain available, which is the deployment rollback contract.
+  }
+  const turnstile = createTurnstileVerifier({
+    enabled: turnstileEnabled,
+    siteKey: turnstileFlagValid ? env.TURNSTILE_SITE_KEY : undefined,
+    secretKey: turnstileFlagValid ? env.TURNSTILE_SECRET_KEY : undefined,
+    expectedHostname: turnstileHostname,
+    expectedAction: TURNSTILE_BOOKING_ACTION,
+  })
 
   const ports: EnginePorts = {
     repositories,
@@ -194,6 +222,7 @@ export function buildPorts(env: Env): EnginePorts {
     clock,
     queue,
     rateLimiter,
+    turnstile,
     config: {
       baseUrl,
       brandName: env.BRAND_NAME ?? 'Punctual',

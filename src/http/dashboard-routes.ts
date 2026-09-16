@@ -3039,6 +3039,7 @@ export function buildDashboardRoutes(
     const moved = await repos.bookings.markRescheduled(
       old.id,
       outcome.booking.id,
+      movedAt,
       [cleanup],
       ports.config.singleActiveBookingEventTypeId === eventType.id,
     )
@@ -3218,6 +3219,9 @@ export function buildDashboardRoutes(
     // the host's calendar.
     if (old.status !== 'confirmed') {
       return manageError(c, 'This booking is no longer active.')
+    }
+    if (old.endUtc <= ports.clock.now()) {
+      return manageError(c, 'This booking has ended and can no longer be moved.')
     }
 
     const repos = ports.repositories(guestScope())

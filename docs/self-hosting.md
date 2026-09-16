@@ -154,7 +154,55 @@ on a domain you have verified with your provider. Configure SPF, DKIM and
 DMARC on that domain — booking confirmations that land in spam are worse than
 no email at all.
 
-## 7. Make it yours
+## 7. Protect public booking creation with Turnstile (optional)
+
+Turnstile adds a browser check to the final guest confirmation form. The
+existing IP rate limit still runs first, and the REST API, MCP, authenticated
+dashboard, and guest reschedule/cancel links are not challenged.
+
+1. In Cloudflare Turnstile, create one **Managed** widget and allow only the
+   hostname that serves your booking pages (for example,
+   `book.example.com`). Copy its public sitekey and private secret key.
+2. Keep protection disabled while you configure both keys:
+
+   ```toml
+   [vars]
+   TURNSTILE_ENABLED = "0"
+   TURNSTILE_SITE_KEY = "<public sitekey>"
+   ```
+
+   ```bash
+   npx wrangler secret put TURNSTILE_SECRET_KEY
+   ```
+
+3. Deploy this disabled configuration, then set
+   `TURNSTILE_ENABLED = "1"` and deploy again. When enabled, a missing sitekey,
+   missing secret, invalid flag value, Siteverify outage, or five-second
+   Siteverify timeout fails closed only on new public guest bookings. It does
+   not prevent owners from signing in or managing existing bookings.
+
+The server validates every token against Cloudflare's Siteverify endpoint and
+requires the exact hostname from `BASE_URL` and the action
+`booking_create`. Tokens are never accepted from the widget alone. The
+application does not set a Content Security Policy by default; if your own
+proxy adds one, allow `https://challenges.cloudflare.com` in both
+`script-src` and `frame-src`.
+
+For local or automated tests, use Cloudflare's published dummy pair rather
+than production credentials:
+
+```text
+sitekey: 1x00000000000000000000AA
+secret:  1x0000000000000000000000000000000AA
+```
+
+To roll back an incident, set `TURNSTILE_ENABLED = "0"` and deploy. Do not
+delete the widget or secret as the first response: explicit disablement is
+easy to verify and leaves the existing IP and single-active-booking limits in
+place. The application never disables verification automatically after a
+provider failure.
+
+## 8. Make it yours
 
 Everything a guest sees can carry your identity instead of the defaults.
 
@@ -237,6 +285,8 @@ Two features need a paid plan, and both degrade gracefully:
 | `SIGNUPS` | secret or `[vars]` | Pins the sign-up policy: `open`, `closed`, or a comma list of emails and `@domains`. Unset (the default), admins manage it from the dashboard's Admin page instead — existing users always sign in either way |
 | `DEMO_BOOKING_PATH` | `[vars]` | A live booking page on this deployment (e.g. `/jo/30min`), embedded on the landing page. Unset: no demo section |
 | `SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID` | `[vars]` | Optional event type ID that permits only one confirmed booking whose end time is still in the future per trimmed, case-insensitive guest email. Unset: no email-based booking limit |
+| `TURNSTILE_ENABLED` | `[vars]` | `0` by default. Set to `1` only after both keys are configured; invalid non-zero values fail new public bookings closed |
+| `TURNSTILE_SITE_KEY` | `[vars]` | Public sitekey rendered only on the guest confirmation form |
 | `GA_MEASUREMENT_ID` | `[vars]` | Unset by default. A GA4 id (`G-XXXXXXXXXX`) loads Google Analytics on the marketing/docs pages ONLY — never on a booking page or the dashboard |
 | `ENCRYPTION_KEY_V1` | secret | AES-GCM key for calendar tokens |
 | `SIGNING_KEY` | secret | HMAC key for guest manage links |
@@ -244,6 +294,7 @@ Two features need a paid plan, and both degrade gracefully:
 | `MICROSOFT_CLIENT_ID` / `_SECRET` | secret | Your Microsoft app |
 | `RESEND_API_KEY` | secret | Omit to log emails instead of sending — `/health` and the dashboard both warn when neither key is set |
 | `BREVO_API_KEY` | secret | Alternative to Resend; Resend wins if both are set |
+| `TURNSTILE_SECRET_KEY` | secret | Private credential used only for server-side Siteverify calls |
 
 ## Telemetry
 

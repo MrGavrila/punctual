@@ -108,6 +108,16 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
         if (!eventType) return { ok: false, reason: 'policy', detail: 'unknown event type' }
         const enforceSingleActiveEmail =
           !request.rescheduleOf && ports.config.singleActiveBookingEventTypeId === eventType.id
+        if (request.rescheduleOf) {
+          const original = await repos.bookings.byId(request.rescheduleOf)
+          if (
+            !original || original.status !== 'confirmed' || original.endUtc <= ports.clock.now() ||
+            original.eventTypeId !== eventType.id ||
+            original.guestEmail.trim().toLowerCase() !== request.guestEmail.trim().toLowerCase()
+          ) {
+            return { ok: false, reason: 'policy', detail: 'This booking can no longer be moved.' }
+          }
+        }
 
         // ---- Leases for collective (ADR-0002 §3) ----------------------------
         // Ascending host id order makes deadlock impossible: every caller
@@ -202,7 +212,7 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
         // ---- The write that actually arbitrates ---------------------------
         written = await repos.bookings.createWithLocks(prepared.booking, prepared.buckets, {
           enforceSingleActiveEmail,
-          now,
+          now: ports.clock.now(),
         })
         if (!written) {
           if (

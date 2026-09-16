@@ -8,3 +8,8 @@
 BASE_URL=http://localhost:8787
 ENCRYPTION_KEY_V1=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzItYnl0ZXM=
 SIGNING_KEY=ZGV2LW9ubHktc2lnbmluZy1rZXktLTMyLWJ5dGVzISE=
+
+# Public booking bot verification is off unless explicitly enabled. For local
+# automated testing, use Cloudflare's published dummy credentials rather than
+# a production widget's keys (docs/self-hosting.md).
+TURNSTILE_ENABLED=0

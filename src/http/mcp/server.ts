@@ -764,6 +764,7 @@ async function rescheduleBooking(
   const moved = await repos.bookings.markRescheduled(
     original.id,
     outcome.booking.id,
+    deps.ports.clock.now(),
     [cleanup],
     deps.ports.config.singleActiveBookingEventTypeId === eventType.id,
   )

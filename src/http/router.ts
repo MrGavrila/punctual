@@ -63,6 +63,15 @@ function publicBookingFoot(embed = false): string {
   return shellFoot(false, embed)
 }
 
+function publicTurnstile(ports: EnginePorts): { enabled: boolean; siteKey: string | null } | undefined {
+  const turnstile = ports.turnstile
+  if (!turnstile?.enabled) return undefined
+  return {
+    enabled: true,
+    siteKey: turnstile.configured ? turnstile.siteKey : null,
+  }
+}
+
 export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>()
   const publicScope: RequestScope = { consistency: 'unconstrained' }
@@ -471,7 +480,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       publicBookingHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
       eventHeader(data) +
       hostsRow(data) +
-      confirmForm(data, start) +
+      confirmForm(data, start, { turnstile: publicTurnstile(ports) }) +
       publicBookingFoot(embed)
     return c.html(html)
   })
@@ -556,10 +565,45 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           // effective question has a different id needs to reappear under
           // THAT id, or confirmForm's `values[q.id]` lookup renders it as
           // empty and the guest's typed text looks lost on the error page.
-          confirmForm(data, start, { errors, values: { name, email, ...declared }, holdId }) +
+          confirmForm(data, start, {
+            errors,
+            values: { name, email, ...declared },
+            holdId,
+            turnstile: publicTurnstile(ports),
+          }) +
           publicBookingFoot(embed),
         400,
       )
+    }
+
+    // The existing IP limiter intentionally stays first. Turnstile is an
+    // additional proof for the one public write, not a replacement for the
+    // cheap edge-side flood guard. Field validation happens before token use
+    // so a typo in the form does not consume a single-use token needlessly.
+    if (ports.turnstile?.enabled) {
+      const rawToken = form.get('cf-turnstile-response')
+      const verification = await ports.turnstile.verify({
+        token: typeof rawToken === 'string' ? rawToken : '',
+        remoteIp: ip,
+      })
+      if (!verification.ok) {
+        const unavailable = verification.reason !== 'invalid'
+        const message = unavailable
+          ? 'Verification is temporarily unavailable. Please reload this page and try again.'
+          : 'We could not complete the verification. Please try again.'
+        return c.html(
+          publicBookingHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
+            eventHeader(data) +
+            confirmForm(data, start, {
+              errors: { turnstile: message },
+              values: { name, email, ...declared },
+              holdId,
+              turnstile: publicTurnstile(ports),
+            }) +
+            publicBookingFoot(embed),
+          unavailable ? 503 : 400,
+        )
+      }
     }
 
     const hostUsers = data.hosts ? hostUsers_(data.hosts) : [host]
@@ -589,6 +633,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
               },
               values: { name, email, ...declared },
               holdId,
+              turnstile: publicTurnstile(ports),
             })
           : outcome.reason === 'slot_taken' || outcome.reason === 'outside_availability'
           ? slotTakenPage(data, localDateString(start, guestTimezone))

@@ -113,12 +113,13 @@ const queue: QueuePort = {
  * so `markRescheduled` and the page's reads see it.
  */
 const booked: BookingAttempt[] = []
+let nextBookingId = 0
 const coordinator = new Proxy({} as HostCoordinator, {
   get(_target, prop) {
     if (prop === 'book') {
       return async (_hostUserId: string, request: BookingAttempt) => {
         booked.push(request)
-        const id = `bk_hb_new_${booked.length}`
+        const id = `bk_hb_new_${++nextBookingId}`
         const booking: Booking = {
           id,
           eventTypeId: request.eventTypeId,
@@ -141,7 +142,8 @@ const coordinator = new Proxy({} as HostCoordinator, {
           createdAt: NOW,
         }
         const created = await createD1Repositories(db, { consistency: 'bookmark' }).bookings.createWithLocks(booking, [])
-        return { ok: true, booking: created ?? booking, manageToken: `tok_${id}` }
+        if (!created) throw new Error('test: replacement was not inserted')
+        return { ok: true, booking: created, manageToken: `tok_${id}` }
       }
     }
     return () => {

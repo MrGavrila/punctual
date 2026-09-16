@@ -14,12 +14,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { applyD1Migrations, createExecutionContext, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { buildPorts, type Env } from '../../src/index.js'
-import { createEngine, createSlotService } from '../../src/engine.js'
+import { createEngine, createSlotService, type Engine } from '../../src/engine.js'
 import { buildApiRoutes, toInstant } from '../../src/http/api/rest.js'
 import { buildMcpRoutes } from '../../src/http/mcp/server.js'
 import { buildEmbedRoutes, embedScript } from '../../src/http/embed.js'
-import { createApiKey } from '../../src/core/domain/auth-flows.js'
-import type { EnginePorts } from '../../src/ports.js'
+import { createApiKey, issueManageToken } from '../../src/core/domain/auth-flows.js'
+import type { EnginePorts, Turnstile, TurnstileVerification } from '../../src/ports.js'
 import type { EventType, User } from '../../src/core/domain/types.js'
 
 // ---------------------------------------------------------------------------
@@ -169,6 +169,61 @@ async function firstSlot(app: Hono, key: string, eventTypeId: string): Promise<S
   const body = (await res.json()) as { data: SlotJson[] }
   expect(body.data.length).toBeGreaterThan(0)
   return body.data[0]!
+}
+
+interface FakeTurnstile extends Turnstile {
+  readonly calls: Array<{ token: string; remoteIp?: string }>
+}
+
+function fakeTurnstile(
+  results: TurnstileVerification[],
+  options: { enabled?: boolean; configured?: boolean; siteKey?: string | null } = {},
+): FakeTurnstile {
+  const calls: FakeTurnstile['calls'] = []
+  let resultIndex = 0
+  const enabled = options.enabled ?? true
+  const configured = options.configured ?? true
+  return {
+    enabled,
+    configured,
+    siteKey: enabled && configured ? (options.siteKey ?? '1x00000000000000000000AA') : null,
+    calls,
+    async verify(input) {
+      calls.push(input)
+      const result = results[Math.min(resultIndex, results.length - 1)]
+      resultIndex++
+      if (!result) throw new Error('fakeTurnstile: no verification result configured')
+      return result
+    },
+  }
+}
+
+async function submitPublicConfirmation(
+  engine: Engine,
+  seed: Seeded,
+  start: number,
+  overrides: Record<string, string> = {},
+  ip = `203.0.113.${1 + Math.floor(Math.random() * 250)}`,
+): Promise<Response> {
+  const form = new URLSearchParams({
+    start: String(start),
+    tz: 'UTC',
+    name: 'Turnstile Guest',
+    email: 'turnstile.guest@example.com',
+    ...overrides,
+  })
+  return engine.fetch(
+    new Request(`https://punctual.test/${seed.user.slug}/${seed.eventType.slug}/confirm`, {
+      method: 'POST',
+      headers: {
+        'cf-connecting-ip': ip,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: form,
+    }),
+    env,
+    createExecutionContext(),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1730,5 +1785,230 @@ describe('buildPorts configuration', () => {
       SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID: '  evt_intro  ',
     } as Env)
     expect(ports.config.singleActiveBookingEventTypeId).toBe('evt_intro')
+  })
+})
+
+describe('public booking Turnstile protection', () => {
+  it('renders the widget only on the guest confirmation form', async () => {
+    const ports = testPorts()
+    ports.turnstile = fakeTurnstile([{ ok: true }])
+    const api = buildApp(ports)
+    const engine = createEngine(ports)
+    const seed = await seedHost(ports)
+    const slot = await firstSlot(api, seed.apiKey, seed.eventType.id)
+
+    const confirm = await engine.fetch(
+      new Request(
+        `https://punctual.test/${seed.user.slug}/${seed.eventType.slug}/confirm?start=${slot.start.epochMs}&tz=UTC`,
+      ),
+      env,
+      createExecutionContext(),
+    )
+    const confirmHtml = await confirm.text()
+    expect(confirm.status).toBe(200)
+    expect(confirmHtml).toContain('class="cf-turnstile"')
+    expect(confirmHtml).toContain('data-action="booking_create"')
+    expect(confirmHtml).toContain('1x00000000000000000000AA')
+
+    const datePicker = await engine.fetch(
+      new Request(`https://punctual.test/${seed.user.slug}/${seed.eventType.slug}`),
+      env,
+      createExecutionContext(),
+    )
+    expect(await datePicker.text()).not.toContain('cf-turnstile')
+
+    const login = await engine.fetch(new Request('https://punctual.test/login'), env, createExecutionContext())
+    expect(await login.text()).not.toContain('cf-turnstile')
+  })
+
+  it('validates a token before creating the booking', async () => {
+    const ports = testPorts()
+    const queued: unknown[] = []
+    ports.queue = {
+      async send(message) { queued.push(message) },
+      async sendBatch(messages) { queued.push(...messages) },
+    }
+    const turnstile = fakeTurnstile([{ ok: true }])
+    ports.turnstile = turnstile
+    const api = buildApp(ports)
+    const seed = await seedHost(ports)
+    const slot = await firstSlot(api, seed.apiKey, seed.eventType.id)
+
+    const response = await submitPublicConfirmation(createEngine(ports), seed, slot.start.epochMs, {
+      'cf-turnstile-response': 'fresh-valid-token',
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain("You're booked")
+    expect(turnstile.calls).toHaveLength(1)
+    expect(turnstile.calls[0]?.token).toBe('fresh-valid-token')
+    const stored = await env.DB.prepare('SELECT COUNT(*) AS count FROM bookings WHERE event_type_id = ?')
+      .bind(seed.eventType.id)
+      .first<{ count: number }>()
+    expect(stored?.count).toBe(1)
+    expect(queued).toHaveLength(1)
+  })
+
+  it.each([
+    ['missing token', { ok: false, reason: 'invalid' } as const, {}, 400],
+    ['invalid or expired token', { ok: false, reason: 'invalid' } as const, { 'cf-turnstile-response': 'spent-token' }, 400],
+    ['provider outage', { ok: false, reason: 'unavailable' } as const, { 'cf-turnstile-response': 'unverified-token' }, 503],
+    ['incomplete configuration', { ok: false, reason: 'misconfigured' } as const, { 'cf-turnstile-response': 'unverified-token' }, 503],
+  ])('fails closed for %s, preserves the form, and creates no side effects', async (_label, result, fields, status) => {
+    const ports = testPorts()
+    const queued: unknown[] = []
+    ports.queue = {
+      async send(message) { queued.push(message) },
+      async sendBatch(messages) { queued.push(...messages) },
+    }
+    ports.turnstile = fakeTurnstile([result], {
+      configured: result.reason !== 'misconfigured',
+    })
+    const api = buildApp(ports)
+    const seed = await seedHost(ports)
+    const slot = await firstSlot(api, seed.apiKey, seed.eventType.id)
+
+    const response = await submitPublicConfirmation(createEngine(ports), seed, slot.start.epochMs, {
+      name: 'Preserved Name',
+      email: 'preserved@example.com',
+      q_agenda: 'Preserved topic',
+      hold: 'hold-preserved-on-retry',
+      ...fields,
+    })
+
+    expect(response.status).toBe(status)
+    const html = await response.text()
+    expect(html).toContain('value="Preserved Name"')
+    expect(html).toContain('value="preserved@example.com"')
+    expect(html).toContain('>Preserved topic</textarea>')
+    expect(html).toContain('name="hold" value="hold-preserved-on-retry"')
+    expect(html).toMatch(/complete the verification|temporarily unavailable/)
+    const stored = await env.DB.prepare('SELECT COUNT(*) AS count FROM bookings WHERE event_type_id = ?')
+      .bind(seed.eventType.id)
+      .first<{ count: number }>()
+    expect(stored?.count).toBe(0)
+    expect(queued).toHaveLength(0)
+  })
+
+  it('allows a fresh verification retry after a rejected token', async () => {
+    const ports = testPorts()
+    const queued: unknown[] = []
+    ports.queue = {
+      async send(message) { queued.push(message) },
+      async sendBatch(messages) { queued.push(...messages) },
+    }
+    const turnstile = fakeTurnstile([{ ok: false, reason: 'invalid' }, { ok: true }])
+    ports.turnstile = turnstile
+    const api = buildApp(ports)
+    const seed = await seedHost(ports)
+    const slot = await firstSlot(api, seed.apiKey, seed.eventType.id)
+    const engine = createEngine(ports)
+
+    const rejected = await submitPublicConfirmation(engine, seed, slot.start.epochMs, {
+      'cf-turnstile-response': 'spent-token',
+    })
+    expect(rejected.status).toBe(400)
+
+    const accepted = await submitPublicConfirmation(engine, seed, slot.start.epochMs, {
+      'cf-turnstile-response': 'fresh-token',
+    })
+    expect(accepted.status).toBe(200)
+    expect(turnstile.calls.map((call) => call.token)).toEqual(['spent-token', 'fresh-token'])
+    const stored = await env.DB.prepare('SELECT COUNT(*) AS count FROM bookings WHERE event_type_id = ?')
+      .bind(seed.eventType.id)
+      .first<{ count: number }>()
+    expect(stored?.count).toBe(1)
+    expect(queued).toHaveLength(1)
+  })
+
+  it('keeps the existing IP limiter ahead of Turnstile', async () => {
+    const ports = testPorts()
+    const turnstile = fakeTurnstile([{ ok: true }])
+    ports.turnstile = turnstile
+    ports.rateLimiter = {
+      async check() {
+        return { allowed: false, remaining: 0, resetAt: ports.clock.now() + 60_000 }
+      },
+    }
+    const seed = await seedHost(ports)
+
+    const response = await submitPublicConfirmation(createEngine(ports), seed, Date.now() + DAY_MS, {
+      'cf-turnstile-response': 'would-be-valid',
+    })
+
+    expect(response.status).toBe(429)
+    expect(turnstile.calls).toHaveLength(0)
+  })
+
+  it('leaves owner authentication and token-protected guest management operational when misconfigured', async () => {
+    const ports = testPorts()
+    ports.turnstile = fakeTurnstile([{ ok: false, reason: 'misconfigured' }], { configured: false })
+    const api = buildApp(ports)
+    const seed = await seedHost(ports)
+    const slot = await firstSlot(api, seed.apiKey, seed.eventType.id)
+    const created = await api.request('/api/v1/bookings', {
+      method: 'POST',
+      headers: { ...auth(seed.apiKey), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        eventTypeId: seed.eventType.id,
+        start: slot.start.iso,
+        guestName: 'Manage Guest',
+        guestEmail: 'manage.guest@example.com',
+      }),
+    })
+    expect(created.status).toBe(201)
+    const bookingId = ((await created.json()) as { data: { id: string } }).data.id
+    const repos = ports.repositories({ consistency: 'bookmark' })
+    const booking = await repos.bookings.byId(bookingId)
+    if (!booking) throw new Error('expected the API booking to exist')
+    const manageToken = await issueManageToken({ crypto: ports.crypto }, booking, 'manage')
+    await repos.bookings.rotateManageToken(bookingId, manageToken.tokenHash)
+    const engine = createEngine(ports)
+
+    const login = await engine.fetch(new Request('https://punctual.test/login'), env, createExecutionContext())
+    expect(login.status).toBe(200)
+
+    const manage = await engine.fetch(
+      new Request(`https://punctual.test/booking/${bookingId}?token=${encodeURIComponent(manageToken.token)}`),
+      env,
+      createExecutionContext(),
+    )
+    expect(manage.status).toBe(200)
+    expect(await manage.text()).not.toContain('Verification is temporarily unavailable')
+  })
+
+  it('can be disabled and re-enabled without making the Worker fail to start', () => {
+    const base = {
+      ...env,
+      BASE_URL: 'https://punctual.test',
+      ENCRYPTION_KEY_V1: keyMaterial(1),
+      SIGNING_KEY: keyMaterial(9),
+    } as Env
+
+    const disabled = buildPorts({ ...base, TURNSTILE_ENABLED: '0' })
+    expect(disabled.turnstile).toMatchObject({ enabled: false, configured: false, siteKey: null })
+
+    const enabled = buildPorts({
+      ...base,
+      TURNSTILE_ENABLED: '1',
+      TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+      TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+    })
+    expect(enabled.turnstile).toMatchObject({ enabled: true, configured: true, siteKey: '1x00000000000000000000AA' })
+
+    const disabledAgain = buildPorts({ ...base, TURNSTILE_ENABLED: '0' })
+    expect(disabledAgain.turnstile).toMatchObject({ enabled: false, configured: false, siteKey: null })
+  })
+
+  it.each(['1', 'unexpected'])('keeps incomplete or invalid enabled configuration local to public booking (%s)', (flag) => {
+    const ports = buildPorts({
+      ...env,
+      BASE_URL: 'https://punctual.test',
+      ENCRYPTION_KEY_V1: keyMaterial(1),
+      SIGNING_KEY: keyMaterial(9),
+      TURNSTILE_ENABLED: flag,
+    } as Env)
+
+    expect(ports.turnstile).toMatchObject({ enabled: true, configured: false, siteKey: null })
   })
 })

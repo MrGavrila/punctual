@@ -22,6 +22,7 @@ import type { CompanyLogo,
 import { effectiveQuestions } from '../../core/domain/booking-service.js'
 import { slotStateClassName } from '../../core/slot-state.js'
 import { formatInZone, localDateString, offsetLabel } from '../../core/time/zone.js'
+import { TURNSTILE_BOOKING_ACTION } from '../../ports.js'
 import { embedResizeScriptTag } from '../embed.js'
 import { pageCss } from '../styles.js'
 
@@ -636,7 +637,12 @@ export function slotList(d: BookingPageData): string {
 export function confirmForm(
   d: BookingPageData,
   start: number,
-  opts: { holdId?: string; errors?: Record<string, string>; values?: Record<string, string> } = {},
+  opts: {
+    holdId?: string
+    errors?: Record<string, string>
+    values?: Record<string, string>
+    turnstile?: { enabled: boolean; siteKey: string | null }
+  } = {},
 ): string {
   const et = d.eventType
   const errors = opts.errors ?? {}
@@ -675,6 +681,23 @@ export function confirmForm(
     })
     .join('\n')
 
+  const turnstile = opts.turnstile
+  const turnstileError = errors['turnstile']
+  const turnstileMarkup = !turnstile?.enabled
+    ? ''
+    : turnstile.siteKey
+      ? `<div style="margin-top:1.25rem">
+    ${turnstileError ? `<p class="pu-err" role="alert">${escapeHtml(turnstileError)}</p>` : ''}
+    <div class="cf-turnstile" data-sitekey="${escapeHtml(turnstile.siteKey)}"
+         data-action="${TURNSTILE_BOOKING_ACTION}" data-size="flexible"
+         data-refresh-expired="auto" data-refresh-timeout="auto"></div>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <noscript><p class="pu-err">Verification requires JavaScript. Enable it, reload this page, and try again.</p></noscript>
+    <p class="pu-muted" style="font-size:.8125rem">If verification does not appear, allow it in your content blocker and reload this page.</p>
+  </div>`
+      : `<p class="pu-err" role="alert" style="margin-top:1.25rem">Verification is temporarily unavailable. Please reload this page and try again.</p>`
+  const submitDisabled = turnstile?.enabled && !turnstile.siteKey ? ' disabled aria-disabled="true"' : ''
+
   return `<section class="pu-card" aria-label="Confirm your booking">
   <h2>Confirm your booking</h2>
   <div class="pu-slot-chosen">
@@ -698,8 +721,9 @@ export function confirmForm(
            ${errors['email'] ? 'aria-describedby="err-email"' : ''}>
     ${errors['email'] ? `<p class="pu-err" id="err-email">${escapeHtml(errors['email'])}</p>` : ''}
     ${questions}
+    ${turnstileMarkup}
     <div style="margin-top:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap">
-      <button class="pu-btn pu-btn-success" type="submit">Confirm booking</button>
+      <button class="pu-btn pu-btn-success" type="submit"${submitDisabled}>Confirm booking</button>
       <a class="pu-btn pu-btn-ghost" href="${escapeHtml(bookingPath(d))}?date=${escapeHtml(localDateString(start, d.guestTimezone))}${d.embed ? '&embed=1' : ''}">Back</a>
     </div>
   </form>

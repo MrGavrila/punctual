@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EventType, Slot, User } from '../../src/core/domain/types.js'
-import { eventHeader, hostsRow, joinNames, monthGrid, shellFoot, shellHead, slotList, type BookingPageData } from '../../src/http/pages/booking.js'
+import { confirmForm, eventHeader, hostsRow, joinNames, monthGrid, shellFoot, shellHead, slotList, type BookingPageData } from '../../src/http/pages/booking.js'
 
 const host: User = {
   id: 'u_host',
@@ -238,6 +238,34 @@ describe('eventHeader timezone picker', () => {
     // over would just be dead query params on a route that ignores them.
     expect(html).not.toContain('name="date"')
     expect(html).not.toContain('name="month"')
+  })
+
+  it('renders Turnstile only when enabled and keeps its secret out of the form', () => {
+    const disabled = confirmForm(pageData(), 1789000000000)
+    expect(disabled).not.toContain('cf-turnstile')
+    expect(disabled).not.toContain('challenges.cloudflare.com')
+
+    const enabled = confirmForm(pageData(), 1789000000000, {
+      turnstile: { enabled: true, siteKey: '1x00000000000000000000AA' },
+    })
+    expect(enabled).toContain('https://challenges.cloudflare.com/turnstile/v0/api.js')
+    expect(enabled).toContain('class="cf-turnstile"')
+    expect(enabled).toContain('data-sitekey="1x00000000000000000000AA"')
+    expect(enabled).toContain('data-action="booking_create"')
+    expect(enabled).toContain('data-refresh-expired="auto"')
+    expect(enabled).toContain('data-refresh-timeout="auto"')
+    expect(enabled).toContain('Verification requires JavaScript')
+    expect(enabled).not.toContain('super-secret-turnstile-key')
+  })
+
+  it('renders a fail-closed message and disables submit when Turnstile is misconfigured', () => {
+    const html = confirmForm(pageData(), 1789000000000, {
+      turnstile: { enabled: true, siteKey: null },
+    })
+
+    expect(html).toContain('Verification is temporarily unavailable')
+    expect(html).toContain('type="submit" disabled')
+    expect(html).not.toContain('challenges.cloudflare.com/turnstile/v0/api.js')
   })
 
   it('offers UTC even when the guest is not already on it', () => {

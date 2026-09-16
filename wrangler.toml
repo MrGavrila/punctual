@@ -91,6 +91,10 @@ SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID = "evt_1DmGOFlbvszMY9vg"
 PUBLIC_SITE_MODE = "booking-only"
 REST_API_ENABLED = "0"
 MCP_ENABLED = "0"
+# Stage 2 booking-abuse protection. Keep disabled until a Managed Turnstile
+# widget for book.kisielowa.com exists, TURNSTILE_SITE_KEY is added here and
+# TURNSTILE_SECRET_KEY is stored with `wrangler secret put`.
+TURNSTILE_ENABLED = "0"
 FROM_EMAIL = "irina@kisielowa.com"
 FROM_NAME = "Dr. Irina Kisielowa"
 SUPPORT_EMAIL = "irina@kisielowa.com"
@@ -105,3 +109,4 @@ SIGNUPS = "closed"
 #   MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET
 #   RESEND_API_KEY / BREVO_API_KEY   (either; Resend wins if both are set —
 #                                      leave both unset to log emails to console)
+#   TURNSTILE_SECRET_KEY  private Siteverify credential; never commit it

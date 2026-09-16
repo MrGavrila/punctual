@@ -700,6 +700,8 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
         )
       }
 
+      // A replacement may borrow only a live source's allowance. This guard
+      // shares the INSERT transaction; an earlier coordinator read can go stale.
       const bookingInsert = activeEmailKey
         ? session
             .prepare(
@@ -730,7 +732,12 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
                (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
                 start_utc,end_utc,local_date,status,answers_json,external_event_ids_json,reschedule_of,
                 rescheduled_to,manage_token_hash,cancelled_at,created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+               SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+               ${booking.rescheduleOf ? `WHERE EXISTS (
+                 SELECT 1 FROM bookings
+                 WHERE id = ? AND status = 'confirmed' AND end_utc > ?
+                   AND event_type_id = ? AND LOWER(TRIM(guest_email)) = ?
+               )` : ''}`,
             )
             .bind(
               booking.id, booking.eventTypeId, booking.hostUserId,
@@ -739,12 +746,16 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
               JSON.stringify(booking.answers), JSON.stringify(booking.externalEventIds),
               booking.rescheduleOf, booking.rescheduledTo, booking.manageTokenHash,
               booking.cancelledAt, booking.createdAt,
+              ...(booking.rescheduleOf ? [
+                booking.rescheduleOf, policy?.now ?? booking.createdAt,
+                booking.eventTypeId, booking.guestEmail.trim().toLowerCase(),
+              ] : []),
             )
       const bookingInsertIndex = statements.length
       statements.push(bookingInsert)
 
       for (const b of buckets) {
-        const statement = activeEmailKey
+        const statement = activeEmailKey || booking.rescheduleOf
           ? session
               .prepare(
                 `INSERT INTO slot_locks (host_user_id,bucket_start,booking_id)
@@ -882,18 +893,28 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
       return (results[0]?.meta.changes ?? 0) > 0
     },
 
-    async markRescheduled(bookingId, newBookingId, tasks = [], transferActiveEmailKey = false) {
+    async markRescheduled(bookingId, newBookingId, at, tasks = [], transferActiveEmailKey = false) {
       // Same guard as cancel: without `status = 'confirmed'` here, two
       // concurrent reschedules of the same booking can each create a real,
       // confirmed replacement, and this UPDATE would just silently pick
       // whichever wrote last — leaving the other replacement live and
-      // orphaned. The caller rolls back its new booking when this is false.
+      // orphaned. The source may also have ended since the replacement INSERT.
+      // Recheck at finalization; failed moves must not release source locks.
+      // The caller rolls back its new booking when this is false.
       const results = await session.batch([
         session
           .prepare(
-            "UPDATE bookings SET status = 'rescheduled', rescheduled_to = ? WHERE id = ? AND status = 'confirmed'",
+            `UPDATE bookings SET status = 'rescheduled', rescheduled_to = ?
+             WHERE id = ? AND status = 'confirmed' AND end_utc > ?
+               AND EXISTS (
+                 SELECT 1 FROM bookings AS replacement
+                 WHERE replacement.id = ? AND replacement.status = 'confirmed'
+                   AND replacement.reschedule_of = bookings.id
+                   AND replacement.event_type_id = bookings.event_type_id
+                   AND LOWER(TRIM(replacement.guest_email)) = LOWER(TRIM(bookings.guest_email))
+               )`,
           )
-          .bind(newBookingId, bookingId),
+          .bind(newBookingId, bookingId, at, newBookingId),
         session
           .prepare(
             `UPDATE bookings SET active_email_key = NULL
@@ -920,7 +941,11 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
           "SELECT 1 FROM bookings WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?",
           [bookingId, newBookingId],
         )),
-        session.prepare('DELETE FROM slot_locks WHERE booking_id = ?').bind(bookingId),
+        session.prepare(
+          `DELETE FROM slot_locks WHERE booking_id = ? AND EXISTS (
+             SELECT 1 FROM bookings WHERE id = ? AND status = 'rescheduled' AND rescheduled_to = ?
+           )`,
+        ).bind(bookingId, bookingId, newBookingId),
       ])
       return (results[0]?.meta.changes ?? 0) > 0
     },

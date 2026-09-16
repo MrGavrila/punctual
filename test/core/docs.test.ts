@@ -69,6 +69,14 @@ describe('docsSelfHostingPage', () => {
     expect(html).toContain('SIGNING_KEY')
   })
 
+  it('documents Turnstile enablement, private configuration and rollback', () => {
+    expect(html).toContain('TURNSTILE_ENABLED')
+    expect(html).toContain('TURNSTILE_SITE_KEY')
+    expect(html).toContain('TURNSTILE_SECRET_KEY')
+    expect(html).toContain('booking_create')
+    expect(html).toContain('<strong>Rollback:</strong>')
+  })
+
   it('covers connecting both calendar providers', () => {
     expect(html).toContain('Google')
     expect(html).toContain('Microsoft')

@@ -270,7 +270,7 @@ export interface BookingRepository {
    * violation mid-batch rolls back every prior statement.
    *
    * @returns the booking on success; `null` when a bucket was already taken
-   *          or an enabled single-active-email policy rejected the row. The
+   *          or the email policy / live replacement-source guard rejected the row. The
    *          caller distinguishes those outcomes and returns a 409.
    */
   createWithLocks(
@@ -318,10 +318,11 @@ export interface BookingRepository {
 
   /** @returns false if the booking was no longer `confirmed` — a concurrent cancel/reschedule won the race. */
   cancelWithLockRelease(bookingId: string, at: number, tasks?: DeliveryTaskDraft[]): Promise<boolean>
-  /** @returns false if the booking was no longer `confirmed` — the caller must roll back the new booking it just created. */
+  /** @returns false if the source ended, changed status, or does not match the replacement; the caller must roll back its new booking. */
   markRescheduled(
     bookingId: string,
     newBookingId: string,
+    at: number,
     tasks?: DeliveryTaskDraft[],
     transferActiveEmailKey?: boolean,
   ): Promise<boolean>
@@ -897,6 +898,31 @@ export interface RateLimitResult {
 }
 
 // ---------------------------------------------------------------------------
+// Bot verification
+// ---------------------------------------------------------------------------
+
+export type TurnstileVerification =
+  | { ok: true }
+  | { ok: false; reason: 'invalid' | 'unavailable' | 'misconfigured' }
+
+/** Rendered into the widget and required verbatim in Siteverify responses. */
+export const TURNSTILE_BOOKING_ACTION = 'booking_create'
+
+/**
+ * Verification for the public guest booking write only.
+ *
+ * The private secret deliberately does not appear on this interface. The
+ * adapter owns it and exposes only the public sitekey plus a verification
+ * operation, keeping it out of templates, logs and application config.
+ */
+export interface Turnstile {
+  readonly enabled: boolean
+  readonly configured: boolean
+  readonly siteKey: string | null
+  verify(input: { token: string; remoteIp?: string }): Promise<TurnstileVerification>
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
@@ -990,6 +1016,8 @@ export interface EnginePorts {
   queue: QueuePort
   coordinator: HostCoordinator
   rateLimiter: RateLimiter
+  /** Optional for embedding compatibility; absent means explicitly disabled. */
+  turnstile?: Turnstile
   config: EngineConfig
 }
 

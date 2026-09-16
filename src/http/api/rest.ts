@@ -1169,6 +1169,7 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
     const moved = await repos.bookings.markRescheduled(
       original.id,
       outcome.booking.id,
+      ports.clock.now(),
       [cleanup],
       ports.config.singleActiveBookingEventTypeId === eventType.id,
     )

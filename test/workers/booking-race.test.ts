@@ -270,7 +270,7 @@ describe('slot_locks is the invariant', () => {
 
     const replacement = make('bk_email_replacement', START + 60 * 60_000, original.booking.id)
     expect(await repos().bookings.createWithLocks(replacement.booking, replacement.buckets, policy)).not.toBeNull()
-    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id, [], true)).toBe(true)
+    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id, NOW, [], true)).toBe(true)
     expect(await repos().bookings.cancelWithLockRelease(replacement.booking.id, NOW)).toBe(true)
 
     const next = make('bk_email_after_cancel', START + 2 * 60 * 60_000)
@@ -299,7 +299,7 @@ describe('slot_locks is the invariant', () => {
     const replacement = make('bk_unscoped_replacement', START + 60 * 60_000, original.booking.id)
     expect(await repos().bookings.createWithLocks(original.booking, original.buckets)).not.toBeNull()
     expect(await repos().bookings.createWithLocks(replacement.booking, replacement.buckets)).not.toBeNull()
-    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id)).toBe(true)
+    expect(await repos().bookings.markRescheduled(original.booking.id, replacement.booking.id, NOW)).toBe(true)
 
     const row = await env.DB.prepare(
       'SELECT active_email_key FROM bookings WHERE id = ?',

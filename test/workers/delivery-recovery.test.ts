@@ -47,7 +47,7 @@ function deleteTask(bookingId = 'bk_1', actionVersion = 'cancelled'): DeliveryTa
   }
 }
 
-async function seedBooking(id: string, status = 'confirmed', start = START): Promise<void> {
+async function seedBooking(id: string, status = 'confirmed', start = START, rescheduleOf: string | null = null): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO bookings
       (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
@@ -56,7 +56,7 @@ async function seedBooking(id: string, status = 'confirmed', start = START): Pro
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).bind(
     id, 'et_1', 'u_host', '["u_host"]', 'Guest', 'guest@example.test', 'UTC',
-    start, start + 30 * 60_000, '2026-09-13', status, '{}', '{}', null,
+    start, start + 30 * 60_000, '2026-09-13', status, '{}', '{}', rescheduleOf,
     null, `hash_${id}`, null, NOW,
   ).run()
   await env.DB.prepare(
@@ -123,10 +123,10 @@ describe('atomic booking delivery intents', () => {
 
   it('records only old-event deletion for a successful reschedule and none for internal rollback', async () => {
     await seedBooking('bk_1')
-    await seedBooking('bk_2', 'confirmed', START + 60 * 60_000)
+    await seedBooking('bk_2', 'confirmed', START + 60 * 60_000, 'bk_1')
     const cleanup = deleteTask('bk_1', 'rescheduled:bk_2')
 
-    expect(await repos().bookings.markRescheduled('bk_1', 'bk_2', [cleanup])).toBe(true)
+    expect(await repos().bookings.markRescheduled('bk_1', 'bk_2', NOW, [cleanup])).toBe(true)
     expect(await taskRows()).toEqual([
       { id: 'booking/bk_1/rescheduled:bk_2/calendar-delete', kind: 'calendar_delete', audience: null, status: 'pending' },
     ])
@@ -137,13 +137,13 @@ describe('atomic booking delivery intents', () => {
 
   it('does not persist effects from a transition that lost a concurrent race', async () => {
     await seedBooking('bk_1')
-    await seedBooking('bk_2', 'confirmed', START + 60 * 60_000)
-    await seedBooking('bk_3', 'confirmed', START + 120 * 60_000)
+    await seedBooking('bk_2', 'confirmed', START + 60 * 60_000, 'bk_1')
+    await seedBooking('bk_3', 'confirmed', START + 120 * 60_000, 'bk_1')
 
     const winner = deleteTask('bk_1', 'rescheduled:bk_2')
     const loser = deleteTask('bk_1', 'rescheduled:bk_3')
-    expect(await repos().bookings.markRescheduled('bk_1', 'bk_2', [winner])).toBe(true)
-    expect(await repos().bookings.markRescheduled('bk_1', 'bk_3', [loser])).toBe(false)
+    expect(await repos().bookings.markRescheduled('bk_1', 'bk_2', NOW, [winner])).toBe(true)
+    expect(await repos().bookings.markRescheduled('bk_1', 'bk_3', NOW, [loser])).toBe(false)
     expect(await repos().bookings.cancelWithLockRelease('bk_1', NOW, [
       emailTask('guest'),
       emailTask('host'),
