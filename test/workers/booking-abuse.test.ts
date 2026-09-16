@@ -38,6 +38,7 @@ async function fixture() {
   ports.config.singleActiveBookingEventTypeId = event.id
   const start = Math.ceil((now + 24 * HOUR) / HOUR) * HOUR
   const engine = createEngine(ports)
+  const get = (path: string) => engine.fetch(new Request(`https://punctual.test${path}`), env, createExecutionContext())
   const request = (path: string, fields: Record<string, string>) => engine.fetch(new Request(`https://punctual.test${path}`, {
     method: 'POST', headers: { 'cf-connecting-ip': `192.0.2.${n}` }, body: new URLSearchParams(fields),
   }), env, createExecutionContext())
@@ -53,7 +54,7 @@ async function fixture() {
   if (!original.ok || !original.manageToken) throw new Error('fixture booking failed')
   queued.length = 0
   const move = (at: number) => request(`/booking/${original.booking.id}/reschedule`, { token: original.manageToken!, start: String(at) })
-  return { ports, repos, user, event, start, original, book, move, request, active, locks, queued, setNow: (at: number) => { now = at } }
+  return { ports, repos, user, event, start, original, book, move, request, get, active, locks, queued, setNow: (at: number) => { now = at } }
 }
 
 function latch() {
@@ -63,6 +64,61 @@ function latch() {
 }
 
 describe('single-active booking lifecycle', () => {
+  it('follows a guest reschedule to the new booking, confirms success, and invalidates the old link', async () => {
+    const f = await fixture()
+    const oldPath = `/booking/${f.original.booking.id}?token=${encodeURIComponent(f.original.manageToken!)}`
+    expect((await f.get(oldPath)).status).toBe(200)
+
+    const moved = await f.move(f.start + HOUR)
+    expect(moved.status).toBe(302)
+    const location = new URL(moved.headers.get('location')!, 'https://punctual.test')
+    const active = (await f.active()).results
+    expect(active).toHaveLength(1)
+    const newId = active[0]!.id
+    expect(newId).not.toBe(f.original.booking.id)
+    expect(location.pathname).toBe(`/booking/${newId}`)
+    const newToken = location.searchParams.get('token')!
+    expect(newToken).toBeTruthy()
+    expect(newToken).not.toBe(f.original.manageToken)
+    expect(f.queued).toContainEqual({ kind: 'calendar.sync', action: 'create', bookingId: newId, manageToken: newToken })
+
+    const landing = await f.get(location.pathname + location.search)
+    expect(landing.status).toBe(200)
+    const html = await landing.text()
+    expect(html).toContain('Booking rescheduled successfully')
+    expect(html).toContain('role="status"')
+    expect(html).toContain('Pick a new time')
+    expect(html).toContain(`/booking/${newId}/cancel`)
+    expect(html).not.toContain('This link is not valid')
+    expect((await f.repos.bookings.byId(newId))?.startUtc).toBe(f.start + HOUR)
+
+    // Email links and subsequent navigation open the ordinary manage page.
+    const emailPage = await f.get(`${location.pathname}?token=${encodeURIComponent(newToken)}`)
+    expect(emailPage.status).toBe(200)
+    expect(await emailPage.text()).not.toContain('Booking rescheduled successfully')
+    expect((await f.get(oldPath)).status).toBe(400)
+    expect((await f.move(f.start + 2 * HOUR)).status).toBe(400)
+    expect((await f.active()).results).toEqual(active)
+    expect(await f.locks(f.original.booking.id)).toBe(0)
+    expect(await f.locks(newId)).toBe(6)
+    expect((await f.get(`${location.pathname}?moved=1`)).status).toBe(400)
+  })
+
+  it('does not announce a move for an original or inactive booking merely because moved=1 is supplied', async () => {
+    const f = await fixture()
+    const original = await f.get(`/booking/${f.original.booking.id}?token=${encodeURIComponent(f.original.manageToken!)}&moved=1`)
+    expect(original.status).toBe(200)
+    expect(await original.text()).not.toContain('Booking rescheduled successfully')
+    const moved = await f.move(f.start + HOUR)
+    const location = new URL(moved.headers.get('location')!, 'https://punctual.test')
+    const newId = location.pathname.split('/').pop()!
+    // Preserve the token deliberately to exercise the rendering guard, too.
+    await f.repos.bookings.cancelWithLockRelease(newId, f.ports.clock.now())
+    const cancelled = await f.get(location.pathname + location.search)
+    expect(cancelled.status).toBe(200)
+    expect(await cancelled.text()).not.toContain('Booking rescheduled successfully')
+  })
+
   it.each([0, 1])('rejects the old guest link at/after the end boundary (%s ms) without new side effects', async (offset) => {
     const f = await fixture()
     f.setNow(f.original.booking.endUtc + offset)

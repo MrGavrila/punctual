@@ -3162,6 +3162,7 @@ export function buildDashboardRoutes(
         // Pass the RAW purpose. Collapsing 'manage' to 'reschedule' here is
         // what hid the cancel form from every real guest.
         purpose,
+        rescheduled: c.req.query('moved') === '1' && booking.status === 'confirmed' && booking.rescheduleOf !== null,
         ...(offered ? { slots: offered } : {}),
         ...(selectedDate ? { selectedDate } : {}),
         ...(Number.isFinite(startParam) ? { newStart: startParam } : {}),
@@ -3254,7 +3255,7 @@ export function buildDashboardRoutes(
     const nextToken = moved.manageToken
     return c.redirect(
       `/booking/${encodeURIComponent(moved.booking.id)}` +
-        (nextToken ? `?token=${encodeURIComponent(nextToken)}` : ''),
+        (nextToken ? `?token=${encodeURIComponent(nextToken)}&moved=1` : ''),
       302,
     )
   })

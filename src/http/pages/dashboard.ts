@@ -2357,6 +2357,8 @@ export interface BookingDetailPageData {
   selectedDate?: string
   /** Set once the guest chose a time, so the page can ask for confirmation. */
   newStart?: number
+  /** Show the completion notice on the redirect after a successful move. */
+  rescheduled?: boolean
   error?: string
 }
 
@@ -2376,6 +2378,7 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
   return (
     shellHead({ title: `${title} · ${d.brandName}`, brandName: d.brandName }) +
     `<section class="pu-card" aria-label="Your booking">
+  ${d.rescheduled ? '<p class="pu-notice" role="status" style="background:var(--pu-status-success-bg);border-color:var(--pu-status-success);color:var(--pu-status-success)">Booking rescheduled successfully. Your new time is shown below.</p>' : ''}
   <p><span class="pu-badge"${cancelled ? ' style="background:var(--pu-paper-dim);color:var(--pu-ink-500)"' : ''}>${escapeHtml(statusLabel(d.booking))}</span></p>
   <h1>${escapeHtml(title)}</h1>
   <p>with ${escapeHtml(d.host.name || d.host.slug)}</p>
