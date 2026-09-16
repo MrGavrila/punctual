@@ -1839,7 +1839,7 @@ describe('public booking Turnstile protection', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(await response.text()).toContain("You're booked")
+    expect(await response.text()).toContain('You&#39;re booked')
     expect(turnstile.calls).toHaveLength(1)
     expect(turnstile.calls[0]?.token).toBe('fresh-valid-token')
     const stored = await env.DB.prepare('SELECT COUNT(*) AS count FROM bookings WHERE event_type_id = ?')

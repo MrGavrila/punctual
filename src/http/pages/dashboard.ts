@@ -49,7 +49,7 @@ import { slotStateClassName } from '../../core/slot-state.js'
 import { slugify } from '../../core/domain/booking-service.js'
 import { formatInZone, localDateString, offsetLabel } from '../../core/time/zone.js'
 import type { ResolvedHost } from '../../core/domain/hosts.js'
-import { avatarHtml, escapeHtml, hostsSentence, joinNames, logoHtml, shellFoot, shellHead } from './booking.js'
+import { avatarHtml, bookingResultCard, escapeHtml, hostsSentence, joinNames, logoHtml, shellFoot, shellHead, type BookingResultData } from './booking.js'
 
 // ---------------------------------------------------------------------------
 // Chrome
@@ -2357,9 +2357,22 @@ export interface BookingDetailPageData {
   selectedDate?: string
   /** Set once the guest chose a time, so the page can ask for confirmation. */
   newStart?: number
-  /** Show the completion notice on the redirect after a successful move. */
-  rescheduled?: boolean
-  error?: string
+}
+
+export function guestBookingResultPage(brandName: string, result: BookingResultData): string {
+  return shellHead({ title: `${result.title} · ${brandName}`, brandName }) +
+    bookingResultCard(result) + shellFoot(false)
+}
+
+export function guestBookingResultDetails(booking: Booking, eventType: EventType | null, host: User | null): NonNullable<BookingResultData['details']> {
+  return {
+    eventTitle: eventType?.title ?? 'Your booking',
+    hostName: host ? host.name || host.slug : undefined,
+    start: booking.startUtc,
+    guestTimezone: booking.guestTimezone,
+    durationMinutes: Math.round((booking.endUtc - booking.startUtc) / 60000),
+    ...(eventType ? { locationLabel: locationLabel(eventType) } : {}),
+  }
 }
 
 export function bookingDetailPage(d: BookingDetailPageData): string {
@@ -2378,7 +2391,6 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
   return (
     shellHead({ title: `${title} · ${d.brandName}`, brandName: d.brandName }) +
     `<section class="pu-card" aria-label="Your booking">
-  ${d.rescheduled ? '<p class="pu-notice" role="status" style="background:var(--pu-status-success-bg);border-color:var(--pu-status-success);color:var(--pu-status-success)">Booking rescheduled successfully. Your new time is shown below.</p>' : ''}
   <p><span class="pu-badge"${cancelled ? ' style="background:var(--pu-paper-dim);color:var(--pu-ink-500)"' : ''}>${escapeHtml(statusLabel(d.booking))}</span></p>
   <h1>${escapeHtml(title)}</h1>
   <p>with ${escapeHtml(d.host.name || d.host.slug)}</p>
@@ -2387,7 +2399,6 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
       Math.round((d.booking.endUtc - d.booking.startUtc) / 60000)
     } min</span></p>
   ${d.eventType ? `<p class="pu-muted">${escapeHtml(locationLabel(d.eventType))}</p>` : ''}
-  ${d.error ? `<p class="pu-err" role="alert">${escapeHtml(d.error)}</p>` : ''}
 </section>` +
     (cancelled
       ? `<section class="pu-card" style="margin-top:1.5rem">
@@ -2503,16 +2514,10 @@ function cancelSection(d: BookingDetailPageData, tokenField: string): string {
 
 /** Shared "this link is not valid" page. Says nothing about why. */
 export function manageLinkErrorPage(brandName: string, message: string): string {
-  return (
-    shellHead({ title: `Link not valid · ${brandName}`, brandName }) +
-    `<section class="pu-card">
-  <h1>This link is not valid</h1>
-  <p class="pu-muted">${escapeHtml(message)}</p>
-  <p class="pu-muted">Links expire, and rescheduling replaces the ones sent before it. The most recent
-     confirmation email always has a working link.</p>
-</section>` +
-    shellFoot(false)
-  )
+  return guestBookingResultPage(brandName, {
+    title: 'This link is not valid', badge: 'Link unavailable', tone: 'error',
+    message: `${message} Links expire or stop working after a move or cancellation. Use the latest email for your current booking.`,
+  })
 }
 
 // ---------------------------------------------------------------------------

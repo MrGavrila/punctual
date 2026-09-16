@@ -738,31 +738,64 @@ export function bookedConfirmation(opts: {
   manageUrl: string
   locationLabel?: string
 }): string {
-  const when = formatInZone(opts.start, opts.guestTimezone, {
+  return bookingResultCard({
+    title: "You're booked",
+    badge: 'Confirmed',
+    tone: 'success',
+    message: 'A calendar invitation is on its way to your inbox.',
+    details: opts,
+    action: { label: 'Reschedule or cancel', href: opts.manageUrl },
+  })
+}
+
+/** Shared, terminal result of a guest action. Management requires a deliberate navigation. */
+export interface BookingResultData {
+  title: string
+  badge: string
+  tone: 'success' | 'neutral' | 'error'
+  message: string
+  details?: {
+    eventTitle: string
+    hostName?: string
+    start: number
+    guestTimezone: string
+    durationMinutes?: number
+    locationLabel?: string
+  }
+  action?: { label: string; href: string }
+}
+
+export function bookingResultCard(opts: BookingResultData): string {
+  const details = opts.details
+  const when = details ? formatInZone(details.start, details.guestTimezone, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  })
-  return `<section class="pu-card pu-confirm" aria-label="Booking confirmed">
+  }) : ''
+  const badgeClass = opts.tone === 'success' ? '' : opts.tone === 'error' ? ' pu-badge-danger' : ' pu-badge-neutral'
+  return `<section class="pu-card pu-confirm" aria-label="${escapeHtml(opts.title)}">
   <svg class="pu-confirm-icon" width="56" height="56" viewBox="0 0 96 96" aria-hidden="true">
     <path class="pu-ring-arc" d="M 69.2 30.8 A 30 30 0 1 1 26.8 30.8"
       fill="none" stroke-width="9" stroke-linecap="round"></path>
     <circle class="pu-ring-dot" cx="48" cy="22" r="11"></circle>
   </svg>
-  <p><span class="pu-badge">Confirmed</span></p>
-  <h1>You're booked</h1>
-  <p class="pu-muted"><strong style="color:var(--pu-ink-950)">${escapeHtml(opts.eventTitle)}</strong> with ${escapeHtml(opts.hostName)}</p>
+  <div role="${opts.tone === 'error' ? 'alert' : 'status'}">
+    <p><span class="pu-badge${badgeClass}">${escapeHtml(opts.badge)}</span></p>
+    <h1>${escapeHtml(opts.title)}</h1>
+  </div>
+  ${details ? `<p class="pu-muted"><strong style="color:var(--pu-ink-950)">${escapeHtml(details.eventTitle)}</strong>${details.hostName ? ` with ${escapeHtml(details.hostName)}` : ''}</p>
   <dl class="pu-confirm-details">
     <div><dt>When</dt><dd class="pu-time">${escapeHtml(when)}<br>
-      <span class="pu-muted">${escapeHtml(opts.guestTimezone)}</span></dd></div>
-    ${opts.locationLabel ? `<div><dt>Where</dt><dd>${escapeHtml(opts.locationLabel)}</dd></div>` : ''}
-  </dl>
-  <p class="pu-muted">A calendar invitation is on its way to your inbox.</p>
-  <p style="margin-top:1.25rem">
-    <a class="pu-btn pu-btn-ghost" href="${escapeHtml(opts.manageUrl)}">Reschedule or cancel</a>
-  </p>
+      <span class="pu-muted">${escapeHtml(details.guestTimezone)}</span></dd></div>
+    ${details.durationMinutes !== undefined ? `<div><dt>Duration</dt><dd>${escapeHtml(String(details.durationMinutes))} minutes</dd></div>` : ''}
+    ${details.locationLabel ? `<div><dt>Where</dt><dd>${escapeHtml(details.locationLabel)}</dd></div>` : ''}
+  </dl>` : ''}
+  <p class="pu-muted">${escapeHtml(opts.message)}</p>
+  ${opts.action ? `<p style="margin-top:1.25rem">
+    <a class="pu-btn pu-btn-ghost" href="${escapeHtml(opts.action.href)}">${escapeHtml(opts.action.label)}</a>
+  </p>` : ''}
 </section>`
 }
 
@@ -771,17 +804,18 @@ export function bookedConfirmation(opts: {
  *
  * A slot can be listed and then lost: listings may come from a read replica
  * (ADR-0007 §2) and round-robin listings are advisory about who. This is an
- * expected outcome, so it reads as a normal step with the next action right
- * there — not as an error.
+ * expected conflict, so the result includes a direct route back to the
+ * selected day without offering to resubmit the failed booking.
  */
 export function slotTakenPage(d: BookingPageData, date: string): string {
-  return `<section class="pu-card" aria-label="Time no longer available">
-  <h1>That time was just taken</h1>
-  <p class="pu-muted">Someone booked it while you were filling in the form. Here are the other times that day.</p>
-  <p style="margin-top:1rem">
-    <a class="pu-btn" href="${escapeHtml(bookingPath(d))}?date=${escapeHtml(date)}&tz=${encodeURIComponent(d.guestTimezone)}${d.embed ? '&embed=1' : ''}">See available times</a>
-  </p>
-</section>`
+  return bookingResultCard({
+    title: 'That time was just taken', badge: 'Time unavailable', tone: 'error',
+    message: 'Someone booked it while you were filling in the form. Choose another available time.',
+    action: {
+      label: 'See available times',
+      href: `${bookingPath(d)}?date=${encodeURIComponent(date)}&tz=${encodeURIComponent(d.guestTimezone)}${d.embed ? '&embed=1' : ''}`,
+    },
+  })
 }
 
 export function errorPage(title: string, message: string): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EventType, Slot, User } from '../../src/core/domain/types.js'
-import { confirmForm, eventHeader, hostsRow, joinNames, monthGrid, shellFoot, shellHead, slotList, type BookingPageData } from '../../src/http/pages/booking.js'
+import { bookedConfirmation, bookingResultCard, confirmForm, eventHeader, hostsRow, joinNames, monthGrid, shellFoot, shellHead, slotList, slotTakenPage, type BookingPageData } from '../../src/http/pages/booking.js'
 
 const host: User = {
   id: 'u_host',
@@ -51,6 +51,42 @@ function pageData(patch: Partial<BookingPageData> = {}): BookingPageData {
     ...patch,
   }
 }
+
+describe('guest result cards', () => {
+  it('keeps the initial confirmation details and working management link', () => {
+    const html = bookedConfirmation({
+      eventTitle: 'Intro call', hostName: 'Grace Hopper', start: Date.UTC(2026, 8, 21, 9),
+      guestTimezone: 'Europe/Amsterdam', manageUrl: '/booking/new?token=current&source=confirmation',
+    })
+    expect(html).toContain('You&#39;re booked')
+    expect(html).toContain('Monday, September 21 at 11:00')
+    expect(html).toContain('Europe/Amsterdam')
+    expect(html).toContain('href="/booking/new?token=current&amp;source=confirmation"')
+    expect(html).toContain('Reschedule or cancel')
+    expect(html).not.toContain('<form')
+  })
+
+  it('escapes result text, meeting details and action attributes', () => {
+    const hostile = '<img src=x onerror="alert(1)">'
+    const html = bookingResultCard({
+      title: hostile, badge: hostile, tone: 'error', message: hostile,
+      details: { eventTitle: hostile, hostName: hostile, start: 0, guestTimezone: 'UTC', locationLabel: hostile },
+      action: { label: hostile, href: '/booking/id?token=" onmouseover="alert(1)' },
+    })
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain(' onmouseover="')
+    expect(html).toContain('&lt;img')
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('pu-badge-danger')
+  })
+
+  it('keeps the selected day, timezone and embed mode in the public slot-conflict action', () => {
+    const html = slotTakenPage(pageData({ embed: true }), '2026-09-21')
+    expect(html).toContain('pu-card pu-confirm')
+    expect(html).toContain('date=2026-09-21&amp;tz=America%2FNew_York&amp;embed=1')
+    expect(html).not.toContain('<form')
+  })
+})
 
 /** The text of one element inside the host identity block, tags stripped. */
 function hostBlockText(html: string, cls: 'pu-host-name' | 'pu-host-org'): string | null {

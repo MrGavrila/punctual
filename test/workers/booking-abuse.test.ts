@@ -4,6 +4,7 @@ import { buildPorts } from '../../src/index.js'
 import { createEngine } from '../../src/engine.js'
 import { createTurnstileVerifier } from '../../src/adapters/turnstile.js'
 import { createCoordinator } from '../../src/adapters/coordinator.js'
+import { localDateString } from '../../src/core/time/zone.js'
 import type { QueueMessage } from '../../src/ports.js'
 
 const HOUR = 3_600_000
@@ -63,6 +64,12 @@ function latch() {
   return { promise, release }
 }
 
+function resultAction(html: string, label: string): string {
+  const href = new RegExp(`href="([^"]+)">${label}</a>`).exec(html)?.[1]
+  if (!href) throw new Error(`Missing result action: ${label}`)
+  return href.replace(/&amp;/g, '&')
+}
+
 describe('single-active booking lifecycle', () => {
   it('follows a guest reschedule to the new booking, confirms success, and invalidates the old link', async () => {
     const f = await fixture()
@@ -85,17 +92,23 @@ describe('single-active booking lifecycle', () => {
     const landing = await f.get(location.pathname + location.search)
     expect(landing.status).toBe(200)
     const html = await landing.text()
-    expect(html).toContain('Booking rescheduled successfully')
+    expect(html).toContain('Your meeting has been rescheduled')
     expect(html).toContain('role="status"')
-    expect(html).toContain('Pick a new time')
-    expect(html).toContain(`/booking/${newId}/cancel`)
+    expect(html).toContain('pu-card pu-confirm')
+    expect(html).not.toContain('Pick a new time')
+    expect(html).not.toContain('<form')
+    const managePath = resultAction(html, 'Reschedule or cancel')
+    expect(managePath).toBe(`${location.pathname}?token=${encodeURIComponent(newToken)}`)
     expect(html).not.toContain('This link is not valid')
     expect((await f.repos.bookings.byId(newId))?.startUtc).toBe(f.start + HOUR)
 
     // Email links and subsequent navigation open the ordinary manage page.
-    const emailPage = await f.get(`${location.pathname}?token=${encodeURIComponent(newToken)}`)
+    const emailPage = await f.get(managePath)
     expect(emailPage.status).toBe(200)
-    expect(await emailPage.text()).not.toContain('Booking rescheduled successfully')
+    const manageHtml = await emailPage.text()
+    expect(manageHtml).not.toContain('Your meeting has been rescheduled')
+    expect(manageHtml).toContain('Pick a new time')
+    expect(manageHtml).toContain(`/booking/${newId}/cancel`)
     expect((await f.get(oldPath)).status).toBe(400)
     expect((await f.move(f.start + 2 * HOUR)).status).toBe(400)
     expect((await f.active()).results).toEqual(active)
@@ -108,7 +121,7 @@ describe('single-active booking lifecycle', () => {
     const f = await fixture()
     const original = await f.get(`/booking/${f.original.booking.id}?token=${encodeURIComponent(f.original.manageToken!)}&moved=1`)
     expect(original.status).toBe(200)
-    expect(await original.text()).not.toContain('Booking rescheduled successfully')
+    expect(await original.text()).not.toContain('Your meeting has been rescheduled')
     const moved = await f.move(f.start + HOUR)
     const location = new URL(moved.headers.get('location')!, 'https://punctual.test')
     const newId = location.pathname.split('/').pop()!
@@ -116,7 +129,104 @@ describe('single-active booking lifecycle', () => {
     await f.repos.bookings.cancelWithLockRelease(newId, f.ports.clock.now())
     const cancelled = await f.get(location.pathname + location.search)
     expect(cancelled.status).toBe(200)
-    expect(await cancelled.text()).not.toContain('Booking rescheduled successfully')
+    expect(await cancelled.text()).not.toContain('Your meeting has been rescheduled')
+  })
+
+  it('allows another deliberate move through the result action using the replacement credentials', async () => {
+    const f = await fixture()
+    const first = await f.move(f.start + HOUR)
+    const result = await f.get(first.headers.get('location')!)
+    const manage = resultAction(await result.text(), 'Reschedule or cancel')
+    const nextStart = f.start + 24 * HOUR
+    const confirmation = await f.get(`${manage}&start=${nextStart}`)
+    const html = await confirmation.text()
+    expect(html).toContain('Confirm new time')
+    const action = /<form method="post" action="([^"]+\/reschedule)">/.exec(html)![1]!
+    const token = /name="token" value="([^"]+)"/.exec(html)![1]!
+    const second = await f.request(action, { token, start: String(nextStart) })
+    expect(second.status).toBe(302)
+    expect(second.headers.get('location')).not.toBe(first.headers.get('location'))
+    expect(await (await f.get(second.headers.get('location')!)).text()).toContain('Your meeting has been rescheduled')
+    expect((await f.get(manage)).status).toBe(400)
+    const active = (await f.active()).results
+    expect(active).toHaveLength(1)
+    expect((await f.repos.bookings.byId(active[0]!.id))?.startUtc).toBe(nextStart)
+  })
+
+  it('shows a terminal cancellation result with meeting details and no management controls', async () => {
+    const f = await fixture()
+    const response = await f.request(`/booking/${f.original.booking.id}/cancel`, { token: f.original.manageToken! })
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('Your booking has been cancelled')
+    expect(html).toContain('pu-card pu-confirm')
+    expect(html).toContain('Intro')
+    expect(html).toContain('UTC')
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('Reschedule or cancel')
+    expect(html).not.toContain(f.original.manageToken)
+    expect((await f.active()).results).toEqual([])
+    expect(await f.locks(f.original.booking.id)).toBe(0)
+    expect((await f.get(`/booking/${f.original.booking.id}?token=${encodeURIComponent(f.original.manageToken!)}`)).status).toBe(400)
+  })
+
+  it('offers a GET back to the selected day after a slot conflict, without changing the original', async () => {
+    const f = await fixture()
+    const start = f.start + 24 * HOUR
+    const other = await f.ports.coordinator.book(f.user.id, {
+      eventTypeId: f.event.id, hostUserIds: [f.user.id], start, end: start + HOUR / 2,
+      guestName: 'Other', guestEmail: 'other@example.test', guestTimezone: 'UTC', answers: {},
+    })
+    expect(other.ok).toBe(true)
+    const response = await f.move(start)
+    expect(response.status).toBe(409)
+    const html = await response.text()
+    expect(html).toContain('That time is no longer available')
+    expect(html).not.toContain('<form')
+    const retryPath = resultAction(html, 'Choose another time')
+    const retryUrl = new URL(retryPath, 'https://punctual.test')
+    expect(retryUrl.searchParams.get('date')).toBe(localDateString(start, 'UTC'))
+    expect(retryUrl.searchParams.has('start')).toBe(false)
+    const picker = await f.get(retryPath)
+    expect(picker.status).toBe(200)
+    expect(await picker.text()).toContain(`value="${localDateString(start, 'UTC')}"`)
+    expect((await f.repos.bookings.byId(f.original.booking.id))?.status).toBe('confirmed')
+    expect((await f.repos.bookings.byId(f.original.booking.id))?.startUtc).toBe(f.start)
+  })
+
+  it.each(['cancel', 'reschedule'] as const)('does not claim failure or offer POST retry when %s throws after the status write', async (action) => {
+    const f = await fixture()
+    const repositories = f.ports.repositories.bind(f.ports)
+    f.ports.repositories = (scope) => {
+      const repos = repositories(scope)
+      repos.bookings.rotateManageToken = async () => { throw new Error('simulated post-write failure') }
+      return repos
+    }
+    const response = await f.request(`/booking/${f.original.booking.id}/${action}`, {
+      token: f.original.manageToken!, start: String(f.start + HOUR),
+    })
+    expect(response.status).toBe(500)
+    const html = await response.text()
+    expect(html).toContain('We could not verify the result')
+    expect(html).toContain('The change may already have completed')
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('Choose another time')
+    expect(html).not.toContain('simulated post-write failure')
+    expect((await f.repos.bookings.byId(f.original.booking.id))?.status).toBe(action === 'cancel' ? 'cancelled' : 'rescheduled')
+  })
+
+  it('uses an informational result for a public booking with an uncertain write result', async () => {
+    const f = await fixture()
+    f.ports.coordinator.book = async () => { throw new Error('simulated connection failure') }
+    const response = await f.request(`/${f.user.slug}/${f.event.slug}/confirm`, {
+      name: 'Guest', email: 'new@example.test', start: String(f.start + HOUR), tz: 'UTC',
+    })
+    expect(response.status).toBe(500)
+    const html = await response.text()
+    expect(html).toContain('We could not verify the result')
+    expect(html).toContain('Your booking may already have been created')
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('simulated connection failure')
   })
 
   it.each([0, 1])('rejects the old guest link at/after the end boundary (%s ms) without new side effects', async (offset) => {

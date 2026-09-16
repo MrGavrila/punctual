@@ -94,7 +94,7 @@ import { MAX_DECODED_PIXELS,
   readImageDimensions,
   thumbKeyFor, fitKeyFor, originalKeyCandidates, isLogoShape, COMPANY_LOGO_KEY, COMPANY_LOGO_SHAPE, companyLogoFrom } from '../core/domain/media.js'
 import { resizeToFitThumbnail, resizeToSquareThumbnail } from '../adapters/image/resize.js'
-import { errorPage, shellFoot, shellHead } from './pages/booking.js'
+import { errorPage, shellFoot, shellHead, type BookingResultData } from './pages/booking.js'
 import {
   CSRF_FIELD,
   MAX_RANGES_PER_DAY,
@@ -103,6 +103,8 @@ import {
   schedulesPage,
   scheduleForm,
   bookingDetailPage,
+  guestBookingResultPage,
+  guestBookingResultDetails,
   bookingsPage,
   connectionsPage,
   dashboardHome,
@@ -3114,6 +3116,18 @@ export function buildDashboardRoutes(
     const host = await repos.users.byId(booking.hostUserId)
     if (!host) return manageError(c, 'This booking is no longer available.')
 
+    if (c.req.query('moved') === '1' && booking.status === 'confirmed' && booking.rescheduleOf !== null) {
+      return c.html(guestBookingResultPage(brandName, {
+        title: 'Your meeting has been rescheduled', badge: 'Rescheduled', tone: 'success',
+        message: 'An updated calendar invitation is on its way to your inbox.',
+        details: guestBookingResultDetails(booking, eventType, host),
+        action: {
+          label: purpose === 'manage' ? 'Reschedule or cancel' : purpose === 'cancel' ? 'Cancel booking' : 'Reschedule',
+          href: `/booking/${encodeURIComponent(booking.id)}?token=${encodeURIComponent(token)}`,
+        },
+      }))
+    }
+
     const startRaw = Number(c.req.query('start'))
     // Same guard as the public booking page: `Number.isFinite` alone lets a
     // huge-but-finite value through, and formatting it later (Intl inside
@@ -3162,7 +3176,6 @@ export function buildDashboardRoutes(
         // Pass the RAW purpose. Collapsing 'manage' to 'reschedule' here is
         // what hid the cancel form from every real guest.
         purpose,
-        rescheduled: c.req.query('moved') === '1' && booking.status === 'confirmed' && booking.rescheduleOf !== null,
         ...(offered ? { slots: offered } : {}),
         ...(selectedDate ? { selectedDate } : {}),
         ...(Number.isFinite(startParam) ? { newStart: startParam } : {}),
@@ -3170,10 +3183,10 @@ export function buildDashboardRoutes(
     )
   })
 
-  app.post('/booking/:id/cancel', async (c) => {
+  app.post('/booking/:id/cancel', guestBookingAction(async (c) => {
     const form = await c.req.formData()
     const token = String(form.get('token') ?? '')
-    if (!(await manageRateLimitOk(c))) return manageError(c, 'Too many attempts. Try again shortly.')
+    if (!(await manageRateLimitOk(c))) return manageActionError(c, 'Too many attempts', 'Please wait before trying again.')
 
     const verified = await verifyManageLink(token, c.req.param('id') ?? '', 'cancel')
     if (!verified.ok) return manageError(c, verified.message)
@@ -3183,23 +3196,27 @@ export function buildDashboardRoutes(
     // A booking that is already cancelled or superseded must not be acted on
     // again: without this, one link stays replayable forever.
     if (verified.booking.status !== 'confirmed') {
-      return manageError(c, 'This booking is no longer active.')
+      return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
     }
 
+    const [eventType, host] = await Promise.all([
+      repos.eventTypes.byId(verified.booking.eventTypeId),
+      repos.users.byId(verified.booking.hostUserId),
+    ])
     const cancelled = await cancelBooking(repos, verified.booking, { cancelledBy: 'guest' })
-    if (!cancelled) return manageError(c, 'This booking is no longer active.')
+    if (!cancelled) return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
 
-    return c.html(
-      shellHead({ title: `Cancelled · ${brandName}`, brandName }) +
-        errorPage('Booking cancelled', 'The time has been released and the host has been notified.') +
-        shellFoot(false),
-    )
-  })
+    return c.html(guestBookingResultPage(brandName, {
+      title: 'Your booking has been cancelled', badge: 'Cancelled', tone: 'neutral',
+      message: 'The time has been released. No further action is needed.',
+      details: guestBookingResultDetails(verified.booking, eventType, host),
+    }))
+  }))
 
-  app.post('/booking/:id/reschedule', async (c) => {
+  app.post('/booking/:id/reschedule', guestBookingAction(async (c) => {
     const form = await c.req.formData()
     const token = String(form.get('token') ?? '')
-    if (!(await manageRateLimitOk(c))) return manageError(c, 'Too many attempts. Try again shortly.')
+    if (!(await manageRateLimitOk(c))) return manageActionError(c, 'Too many attempts', 'Please wait before trying again.')
 
     const verified = await verifyManageLink(token, c.req.param('id') ?? '', 'reschedule')
     if (!verified.ok) return manageError(c, verified.message)
@@ -3210,7 +3227,9 @@ export function buildDashboardRoutes(
     // which throws an uncaught RangeError instead of this clean error page.
     // 8.64e15 is the JS Date range.
     if (!Number.isSafeInteger(start) || Math.abs(start) > 8.64e15) {
-      return manageError(c, 'No new time was chosen.')
+      return manageActionError(c, 'No new time was chosen', 'Choose an available time for your meeting.', {
+        label: 'Choose another time', href: `/booking/${encodeURIComponent(verified.booking.id)}?token=${encodeURIComponent(token)}`,
+      })
     }
 
     const old = verified.booking
@@ -3219,32 +3238,31 @@ export function buildDashboardRoutes(
     // each submission creates ANOTHER booking that consumes another slot on
     // the host's calendar.
     if (old.status !== 'confirmed') {
-      return manageError(c, 'This booking is no longer active.')
+      return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
     }
     if (old.endUtc <= ports.clock.now()) {
-      return manageError(c, 'This booking has ended and can no longer be moved.')
+      return manageActionError(c, 'This booking has ended', 'This booking has ended and can no longer be moved.')
     }
 
     const repos = ports.repositories(guestScope())
     const eventType = await repos.eventTypes.byId(old.eventTypeId)
     const host = await repos.users.byId(old.hostUserId)
-    if (!eventType || !host) return manageError(c, 'This booking can no longer be moved.')
+    if (!eventType || !host) return manageActionError(c, 'This booking can no longer be moved', 'Please contact the host for help with your booking.')
 
     const hosts = await hostsForBooking(repos, eventType, old, host)
     const moved = await rescheduleBooking(repos, old, eventType, host, hosts, start)
     if (!moved.ok) {
       return c.html(
-        bookingDetailPage({
-          brandName,
-          booking: old,
-          eventType,
-          host,
-          token,
-          purpose: 'reschedule',
-          error:
-            moved.reason === 'slot_taken'
-              ? 'That time was just taken. Pick another one.'
-              : 'This booking was already updated elsewhere. Refresh and try again.',
+        guestBookingResultPage(brandName, moved.reason === 'slot_taken' ? {
+          title: 'That time is no longer available', badge: 'Time unavailable', tone: 'error',
+          message: 'Check your booking and choose another available time.',
+          action: {
+            label: 'Choose another time',
+            href: `/booking/${encodeURIComponent(old.id)}?token=${encodeURIComponent(token)}&date=${encodeURIComponent(localDateString(start, old.guestTimezone))}`,
+          },
+        } : {
+          title: 'Your booking was already updated', badge: 'Booking changed', tone: 'error',
+          message: 'Another request changed this booking. Use the latest email to check the current details before making another change.',
         }),
         409,
       )
@@ -3258,7 +3276,28 @@ export function buildDashboardRoutes(
         (nextToken ? `?token=${encodeURIComponent(nextToken)}&moved=1` : ''),
       302,
     )
-  })
+  }))
+
+  function manageActionError(c: Ctx, title: string, message: string, action?: BookingResultData['action']): Response {
+    return c.html(guestBookingResultPage(brandName, {
+      title, badge: 'Unable to complete', tone: 'error', message, ...(action ? { action } : {}),
+    }), 400)
+  }
+
+  /** A write can succeed before a later step throws. Never invite a blind POST retry. */
+  function guestBookingAction(handler: (c: Ctx) => Promise<Response>): (c: Ctx) => Promise<Response> {
+    return async (c) => {
+      try {
+        return await handler(c)
+      } catch {
+        console.error('[punctual] guest booking action result could not be verified')
+        return c.html(guestBookingResultPage(brandName, {
+          title: 'We could not verify the result', badge: 'Please check your booking', tone: 'error',
+          message: 'The change may already have completed. Check your booking using the latest email before trying again. If you are unsure, contact the host.',
+        }), 500)
+      }
+    }
+  }
 
   type ManageResult =
     | { ok: true; booking: Booking; purpose: ManageTokenPurpose }

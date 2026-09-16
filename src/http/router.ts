@@ -30,6 +30,7 @@ import { hostUsers as hostUsers_, resolveHosts as resolveEventTypeHosts } from '
 import { isValidTimeZone, localDateString } from '../core/time/zone.js'
 import {
   bookedConfirmation,
+  bookingResultCard,
   confirmForm,
   errorPage,
   eventHeader,
@@ -497,7 +498,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     if (!limit.allowed) {
       return c.html(
         publicBookingHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
-          errorPage('Too many bookings', 'Please wait a little and try again.') +
+          bookingResultCard({ title: 'Too many bookings', badge: 'Please wait', tone: 'error', message: 'Please wait a little and try again.' }) +
           publicBookingFoot(),
         429,
         { 'retry-after': String(Math.ceil((limit.resetAt - ports.clock.now()) / 1000)) },
@@ -607,18 +608,31 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     }
 
     const hostUsers = data.hosts ? hostUsers_(data.hosts) : [host]
-    const outcome = await ports.coordinator.book(host.id, {
-      eventTypeId: eventType.id,
-      hostUserIds: hostUsers.map((u) => u.id),
-      start,
-      end: start + eventType.durationMinutes * 60_000,
-      guestName: name,
-      guestEmail: email,
-      guestTimezone,
-      answers: declared,
-      holdId,
-      idempotencyKey: c.req.header('idempotency-key') ?? undefined,
-    })
+    let outcome: Awaited<ReturnType<EnginePorts['coordinator']['book']>>
+    try {
+      outcome = await ports.coordinator.book(host.id, {
+        eventTypeId: eventType.id,
+        hostUserIds: hostUsers.map((u) => u.id),
+        start,
+        end: start + eventType.durationMinutes * 60_000,
+        guestName: name,
+        guestEmail: email,
+        guestTimezone,
+        answers: declared,
+        holdId,
+        idempotencyKey: c.req.header('idempotency-key') ?? undefined,
+      })
+    } catch {
+      console.error('[punctual] public booking result could not be verified')
+      return c.html(
+        publicBookingHead({ title: 'Please check your booking', brandName: ports.config.brandName }) +
+          bookingResultCard({
+            title: 'We could not verify the result', badge: 'Please check your booking', tone: 'error',
+            message: 'Your booking may already have been created. Check your email for a confirmation before trying again. If you are unsure, contact the host.',
+          }) + publicBookingFoot(embed),
+        500,
+      )
+    }
 
     if (!outcome.ok) {
       // A listed slot can be lost — replicas lag, and round-robin listings are
@@ -637,13 +651,20 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
             })
           : outcome.reason === 'slot_taken' || outcome.reason === 'outside_availability'
           ? slotTakenPage(data, localDateString(start, guestTimezone))
-          : errorPage('Could not complete booking', outcome.detail ?? 'Please try another time.')
+          : bookingResultCard({
+              title: 'Could not complete booking', badge: 'Unable to complete', tone: 'error',
+              message: outcome.detail ?? 'Please try another time.',
+              action: {
+                label: 'Choose another time',
+                href: `/${encodeURIComponent(userSlug)}/${encodeURIComponent(eventSlug)}?date=${encodeURIComponent(localDateString(start, guestTimezone))}&tz=${encodeURIComponent(guestTimezone)}${embed ? '&embed=1' : ''}`,
+              },
+            })
       return c.html(
         publicBookingHead({
           title: outcome.reason === 'active_booking_exists' ? `Confirm · ${eventType.title}` : 'Time unavailable',
           brandName: ports.config.brandName,
         }) +
-          eventHeader(data) +
+          (outcome.reason === 'active_booking_exists' ? eventHeader(data) : '') +
           body +
           publicBookingFoot(embed),
         409,
