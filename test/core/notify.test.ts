@@ -93,6 +93,7 @@ function fakePorts(
   options: {
     bookings?: Record<string, Booking>
     connectionOwners?: Record<string, string>
+    baseUrl?: string
   } = {},
 ): EnginePorts {
   return {
@@ -132,7 +133,7 @@ function fakePorts(
     },
     clock: { now: () => START - 60_000 },
     config: {
-      baseUrl: 'https://punctual.example',
+      baseUrl: options.baseUrl ?? 'https://punctual.example',
       brandName: 'Punctual',
       supportEmail: 'help@punctual.example',
       fromEmail: 'noreply@punctual.example',
@@ -158,6 +159,66 @@ function emailAttachments(sent: QueueMessage[]): Array<
     .filter((m): m is Extract<QueueMessage, { kind: 'email' }> => m.kind === 'email')
     .map((m) => m.message.attachments)
 }
+
+describe('booking notifications — host management link', () => {
+  it('queues the protected booking URL in both versions of a new-booking host email', async () => {
+    const sent: QueueMessage[] = []
+    const created = booking({ id: 'bk/new?owner' })
+    const expectedUrl = 'https://punctual.example/dashboard/bookings/bk%2Fnew%3Fowner'
+
+    await notifyBookingCreated({
+      ports: fakePorts(sent, { baseUrl: 'https://punctual.example/' }),
+      booking: created,
+      eventType: eventType(),
+      host,
+    })
+
+    const ownerEmail = emailTo(sent, host.email).message
+    expect(ownerEmail.html).toContain(`href="${expectedUrl}"`)
+    expect(ownerEmail.html).toContain('>Manage booking</a>')
+    expect(ownerEmail.text.split('\n')).toContain(`Manage booking: ${expectedUrl}`)
+    expect(ownerEmail.html).not.toContain('?token=')
+    expect(ownerEmail.text).not.toContain('?token=')
+
+    const guestEmail = emailTo(sent, created.guestEmail).message
+    expect(guestEmail.html).not.toContain('/dashboard/bookings/')
+    expect(guestEmail.text).not.toContain('/dashboard/bookings/')
+  })
+
+  it('links a reschedule host email to the replacement booking instead of its predecessor', async () => {
+    const sent: QueueMessage[] = []
+    const previous = booking({ id: 'bk_previous', status: 'rescheduled', rescheduledTo: 'bk_replacement' })
+    const replacement = booking({
+      id: 'bk_replacement',
+      rescheduleOf: previous.id,
+      startUtc: START + 24 * 60 * 60_000,
+      endUtc: START + 24 * 60 * 60_000 + 30 * 60_000,
+    })
+    const replacementUrl = 'https://punctual.example/dashboard/bookings/bk_replacement'
+    const previousUrl = 'https://punctual.example/dashboard/bookings/bk_previous'
+
+    await notifyBookingRescheduled({
+      ports: fakePorts(sent, { bookings: { [previous.id]: previous } }),
+      booking: replacement,
+      previous,
+      eventType: eventType(),
+      host,
+    })
+
+    const ownerEmail = emailTo(sent, host.email).message
+    expect(ownerEmail.html).toContain(`href="${replacementUrl}"`)
+    expect(ownerEmail.html).toContain('>Manage booking</a>')
+    expect(ownerEmail.text.split('\n')).toContain(`Manage booking: ${replacementUrl}`)
+    expect(ownerEmail.html).not.toContain(previousUrl)
+    expect(ownerEmail.text).not.toContain(previousUrl)
+    expect(ownerEmail.html).not.toContain('?token=')
+    expect(ownerEmail.text).not.toContain('?token=')
+
+    const guestEmail = emailTo(sent, replacement.guestEmail).message
+    expect(guestEmail.html).not.toContain('/dashboard/bookings/')
+    expect(guestEmail.text).not.toContain('/dashboard/bookings/')
+  })
+})
 
 describe('notifyBookingCancelled — CANCEL suppressed for a superseded leg', () => {
   it('attaches no .ics when the cancelled booking has been superseded by a reschedule', async () => {

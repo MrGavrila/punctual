@@ -375,7 +375,7 @@ function manageCtas(ctx: BookingEmailContext, audience: EmailAudience): Cta[] {
     if (ctx.rescheduleUrl) ctas.push({ label: 'Reschedule', url: ctx.rescheduleUrl, primary: true })
     if (ctx.cancelUrl) ctas.push({ label: 'Cancel', url: ctx.cancelUrl })
   } else if (ctx.bookingUrl) {
-    ctas.push({ label: 'View booking', url: ctx.bookingUrl, primary: true })
+    ctas.push({ label: 'Manage booking', url: ctx.bookingUrl, primary: true })
   }
   return ctas
 }

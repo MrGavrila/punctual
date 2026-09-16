@@ -35,6 +35,10 @@ const NO_CHAIN: ReadonlyMap<string, Booking> = new Map()
 
 type BookingEmailAction = 'confirmed' | 'rescheduled' | 'cancelled'
 
+function hostBookingUrl(baseUrl: string, bookingId: string): string {
+  return `${baseUrl.replace(/\/$/, '')}/dashboard/bookings/${encodeURIComponent(bookingId)}`
+}
+
 async function deliveryMetadata(
   ports: EnginePorts,
   booking: Booking,
@@ -159,6 +163,7 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
   const guest = bookingConfirmationForGuest({ ...shared, hasAttachment: Boolean(attachments) })
   const hostMail = bookingConfirmationForHost({
     ...shared,
+    bookingUrl: hostBookingUrl(ports.config.baseUrl, booking.id),
     hasAttachment: Boolean(hostAttachments),
     ...(hostSynced ? { calendarSynced: true } : {}),
     ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
@@ -561,6 +566,7 @@ export async function notifyBookingRescheduled(ctx: {
   const hostMail = bookingRescheduled({
     ...shared,
     audience: 'host',
+    bookingUrl: hostBookingUrl(ports.config.baseUrl, booking.id),
     hasAttachment: Boolean(hostAttachments),
     ...(hostSynced ? { calendarSynced: true } : {}),
     ...(ctx.calendarSyncUncertain ? { calendarSyncUncertain: true } : {}),
