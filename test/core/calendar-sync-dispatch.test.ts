@@ -526,9 +526,8 @@ describe('confirmation dispatch', () => {
 
   /**
    * Caught by review. The coordinator hands the SAME raw token to the
-   * just-booked page, whose "Reschedule or cancel" button embeds it. Rotating
-   * the stored hash here killed that button seconds after the guest was shown
-   * it — a link dead on arrival in the browser they are still looking at.
+   * confirmation delivery. Rotating the stored hash here makes the email's
+   * management links dead on arrival.
    */
   it('does not rotate the manage token the guest is already holding', async () => {
     const h = harness()

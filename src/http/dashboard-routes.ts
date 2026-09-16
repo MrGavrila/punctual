@@ -94,7 +94,13 @@ import { MAX_DECODED_PIXELS,
   readImageDimensions,
   thumbKeyFor, fitKeyFor, originalKeyCandidates, isLogoShape, COMPANY_LOGO_KEY, COMPANY_LOGO_SHAPE, companyLogoFrom } from '../core/domain/media.js'
 import { resizeToFitThumbnail, resizeToSquareThumbnail } from '../adapters/image/resize.js'
-import { errorPage, shellFoot, shellHead, type BookingResultData } from './pages/booking.js'
+import {
+  GUEST_MANAGEMENT_EMAIL_GUIDANCE,
+  errorPage,
+  shellFoot,
+  shellHead,
+  type BookingResultData,
+} from './pages/booking.js'
 import {
   CSRF_FIELD,
   MAX_RANGES_PER_DAY,
@@ -3119,12 +3125,8 @@ export function buildDashboardRoutes(
     if (c.req.query('moved') === '1' && booking.status === 'confirmed' && booking.rescheduleOf !== null) {
       return c.html(guestBookingResultPage(brandName, {
         title: 'Your meeting has been rescheduled', badge: 'Rescheduled', tone: 'success',
-        message: 'An updated calendar invitation is on its way to your inbox.',
+        message: `An updated calendar invitation is on its way to your inbox. ${GUEST_MANAGEMENT_EMAIL_GUIDANCE}`,
         details: guestBookingResultDetails(booking, eventType, host),
-        action: {
-          label: purpose === 'manage' ? 'Reschedule or cancel' : purpose === 'cancel' ? 'Cancel booking' : 'Reschedule',
-          href: `/booking/${encodeURIComponent(booking.id)}?token=${encodeURIComponent(token)}`,
-        },
       }))
     }
 

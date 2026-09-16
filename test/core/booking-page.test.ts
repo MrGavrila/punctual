@@ -53,16 +53,19 @@ function pageData(patch: Partial<BookingPageData> = {}): BookingPageData {
 }
 
 describe('guest result cards', () => {
-  it('keeps the initial confirmation details and working management link', () => {
+  it('keeps the initial confirmation details and directs later management through the latest email', () => {
     const html = bookedConfirmation({
       eventTitle: 'Intro call', hostName: 'Grace Hopper', start: Date.UTC(2026, 8, 21, 9),
-      guestTimezone: 'Europe/Amsterdam', manageUrl: '/booking/new?token=current&source=confirmation',
+      guestTimezone: 'Europe/Amsterdam',
     })
     expect(html).toContain('You&#39;re booked')
     expect(html).toContain('Monday, September 21 at 11:00')
     expect(html).toContain('Europe/Amsterdam')
-    expect(html).toContain('href="/booking/new?token=current&amp;source=confirmation"')
-    expect(html).toContain('Reschedule or cancel')
+    expect(html).toContain('use the links in your latest confirmation email')
+    expect(html).toContain('check your spam folder')
+    expect(html).toContain('You can close this page')
+    expect(html).not.toContain('Reschedule or cancel')
+    expect(html).not.toContain('<a class="pu-btn')
     expect(html).not.toContain('<form')
   })
 

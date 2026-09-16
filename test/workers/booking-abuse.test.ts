@@ -97,12 +97,17 @@ describe('single-active booking lifecycle', () => {
     expect(html).toContain('pu-card pu-confirm')
     expect(html).not.toContain('Pick a new time')
     expect(html).not.toContain('<form')
-    const managePath = resultAction(html, 'Reschedule or cancel')
-    expect(managePath).toBe(`${location.pathname}?token=${encodeURIComponent(newToken)}`)
+    expect(html).toContain('use the links in your latest confirmation email')
+    expect(html).toContain('check your spam folder')
+    expect(html).toContain('You can close this page')
+    expect(html).not.toContain('Reschedule or cancel')
+    expect(html).not.toContain('<a class="pu-btn')
+    expect(html).not.toContain(newToken)
     expect(html).not.toContain('This link is not valid')
     expect((await f.repos.bookings.byId(newId))?.startUtc).toBe(f.start + HOUR)
 
     // Email links and subsequent navigation open the ordinary manage page.
+    const managePath = `${location.pathname}?token=${encodeURIComponent(newToken)}`
     const emailPage = await f.get(managePath)
     expect(emailPage.status).toBe(200)
     const manageHtml = await emailPage.text()
@@ -132,11 +137,12 @@ describe('single-active booking lifecycle', () => {
     expect(await cancelled.text()).not.toContain('Your meeting has been rescheduled')
   })
 
-  it('allows another deliberate move through the result action using the replacement credentials', async () => {
+  it('allows another deliberate move through the current replacement credentials', async () => {
     const f = await fixture()
     const first = await f.move(f.start + HOUR)
-    const result = await f.get(first.headers.get('location')!)
-    const manage = resultAction(await result.text(), 'Reschedule or cancel')
+    const firstLocation = new URL(first.headers.get('location')!, 'https://punctual.test')
+    const firstToken = firstLocation.searchParams.get('token')!
+    const manage = `${firstLocation.pathname}?token=${encodeURIComponent(firstToken)}`
     const nextStart = f.start + 24 * HOUR
     const confirmation = await f.get(`${manage}&start=${nextStart}`)
     const html = await confirmation.text()

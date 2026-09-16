@@ -671,11 +671,6 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       )
     }
 
-    // Without the token this button is a 400 — the "Reschedule or cancel"
-    // link on the just-booked page was dead.
-    const manageUrl =
-      `${ports.config.baseUrl}/booking/${outcome.booking.id}` +
-      (outcome.manageToken ? `?token=${encodeURIComponent(outcome.manageToken)}` : '')
     return c.html(
       publicBookingHead({ title: 'Booked', brandName: ports.config.brandName }) +
         bookedConfirmation({
@@ -691,7 +686,6 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           ) || host.name || host.slug,
           start: outcome.booking.startUtc,
           guestTimezone,
-          manageUrl,
         }) +
         publicBookingFoot(embed),
     )

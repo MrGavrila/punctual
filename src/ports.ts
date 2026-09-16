@@ -807,12 +807,11 @@ export type QueueMessage =
        * The booking's raw manage token, carried so the create handler can
        * dispatch the confirmation without re-issuing one.
        *
-       * Re-issuing looked safer but is not: the coordinator hands this same
-       * token to the just-booked page, whose "Reschedule or cancel" button
-       * embeds it, and rotating the stored hash would kill that button
-       * seconds after the guest was shown it. Carrying it adds no exposure —
-       * the rendered confirmation email already contains this token and is
-       * itself a queue message.
+       * Re-issuing looked safer but is not: the confirmation email must carry
+       * the same token whose hash was stored for this booking. Rotating the
+       * stored hash would make that email's management links dead on arrival.
+       * Carrying it adds no exposure — the rendered confirmation email already
+       * contains this token and is itself a queue message.
        */
       manageToken?: string
     }

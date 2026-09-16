@@ -683,12 +683,11 @@ async function legacyAttendees(
  *
  * The manage token arrives on the message rather than being re-issued here.
  * Re-issuing looks safer — only the hash is stored, so the raw token is
- * otherwise unrecoverable — but it is actively wrong: the coordinator hands
- * that same token to the just-booked page, whose "Reschedule or cancel"
- * button embeds it, so rotating the stored hash kills a link the guest is
- * already looking at, seconds after they were shown it. And carrying it adds
- * no exposure: the rendered confirmation email already contains this token
- * and is itself a queue message.
+ * otherwise unrecoverable — but it is actively wrong: the confirmation email
+ * must contain the same token whose hash was stored for this booking, or its
+ * management links are dead on arrival. Carrying it adds no exposure: the
+ * rendered confirmation email already contains this token and is itself a
+ * queue message.
  */
 export async function dispatchConfirmation(
   bookingId: string,

@@ -735,18 +735,19 @@ export function bookedConfirmation(opts: {
   hostName: string
   start: number
   guestTimezone: string
-  manageUrl: string
   locationLabel?: string
 }): string {
   return bookingResultCard({
     title: "You're booked",
     badge: 'Confirmed',
     tone: 'success',
-    message: 'A calendar invitation is on its way to your inbox.',
+    message: `A calendar invitation is on its way to your inbox. ${GUEST_MANAGEMENT_EMAIL_GUIDANCE}`,
     details: opts,
-    action: { label: 'Reschedule or cancel', href: opts.manageUrl },
   })
 }
+
+export const GUEST_MANAGEMENT_EMAIL_GUIDANCE =
+  'To reschedule or cancel, use the links in your latest confirmation email. If the email has not arrived, check your spam folder. You can close this page.'
 
 /** Shared, terminal result of a guest action. Management requires a deliberate navigation. */
 export interface BookingResultData {
