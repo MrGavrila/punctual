@@ -40,6 +40,12 @@ export default defineConfig({
                 PUBLIC_SITE_MODE: 'full',
                 REST_API_ENABLED: '1',
                 MCP_ENABLED: '1',
+                // Production may enable its real widget in wrangler.toml.
+                // Tests opt in explicitly with Cloudflare's published dummy
+                // keys so ordinary fixtures never contact Siteverify or
+                // depend on production configuration.
+                TURNSTILE_ENABLED: '0',
+                TURNSTILE_SITE_KEY: '',
               },
             },
           }),
