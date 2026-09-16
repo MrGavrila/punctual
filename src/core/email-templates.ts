@@ -86,6 +86,54 @@ const DANGER = '#D92D20'
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif"
 const MONO = "ui-monospace,SFMono-Regular,Menlo,'IBM Plex Mono',monospace"
 
+interface EmailTheme {
+  ink: string
+  muted: string
+  paper: string
+  paperDim: string
+  line: string
+  accent: string
+  danger: string
+  font: string
+  mono: string
+  cardRadius: string
+  controlRadius: string
+  wordmarkAccent: boolean
+}
+
+const DEFAULT_EMAIL_THEME: EmailTheme = {
+  ink: INK,
+  muted: MUTED,
+  paper: PAPER,
+  paperDim: PAPER_DIM,
+  line: LINE,
+  accent: MERIDIAN,
+  danger: DANGER,
+  font: FONT,
+  mono: MONO,
+  cardRadius: '16px',
+  controlRadius: '10px',
+  wordmarkAccent: true,
+}
+
+// Booking-only Kisielowa skin, mirroring BOOKING_THEME_CSS. Kept separate
+// from the default shell so account and team-service email retain their
+// existing Punctual presentation.
+const BOOKING_EMAIL_THEME: EmailTheme = {
+  ink: '#111111',
+  muted: '#555555',
+  paper: '#F5F5F5',
+  paperDim: '#EEEEEE',
+  line: '#DDDDDD',
+  accent: '#176B55',
+  danger: '#B53845',
+  font: "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif",
+  mono: "'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace",
+  cardRadius: '2px',
+  controlRadius: '2px',
+  wordmarkAccent: false,
+}
+
 // ---------------------------------------------------------------------------
 // Escaping
 // ---------------------------------------------------------------------------
@@ -179,6 +227,7 @@ interface ShellInput {
   /** Small print under the divider — timezone caveats, security notes. */
   notes?: string[]
   accent?: string
+  theme?: EmailTheme
   /**
    * The host's photo — optional decorative content, unlike the
    * text wordmark above it. A host photo failing to load leaves the
@@ -192,47 +241,49 @@ interface ShellInput {
   avatarAlt?: string
 }
 
-function detailRowHtml(row: DetailRow): string {
+function detailRowHtml(row: DetailRow, theme: EmailTheme): string {
   const href = row.href ? safeUrl(row.href) : null
   const style = row.strike
-    ? `color:${MUTED};text-decoration:line-through;`
-    : `color:${INK};`
+    ? `color:${theme.muted};text-decoration:line-through;`
+    : `color:${theme.ink};`
   const value = href
-    ? `<a href="${escapeHtml(href)}" style="color:${MERIDIAN};text-decoration:underline;">${escapeHtml(row.value)}</a>`
+    ? `<a href="${escapeHtml(href)}" style="color:${theme.accent};text-decoration:underline;">${escapeHtml(row.value)}</a>`
     : escapeHtml(row.value)
   return (
     `<tr>` +
-    `<td style="padding:6px 16px 6px 0;font-family:${FONT};font-size:13px;line-height:20px;color:${MUTED};white-space:nowrap;vertical-align:top;">${escapeHtml(row.label)}</td>` +
-    `<td style="padding:6px 0;font-family:${FONT};font-size:15px;line-height:22px;${style}vertical-align:top;">${value}</td>` +
+    `<td style="padding:6px 16px 6px 0;font-family:${theme.font};font-size:13px;line-height:20px;color:${theme.muted};white-space:nowrap;vertical-align:top;">${escapeHtml(row.label)}</td>` +
+    `<td style="padding:6px 0;font-family:${theme.font};font-size:15px;line-height:22px;${style}vertical-align:top;">${value}</td>` +
     `</tr>`
   )
 }
 
-function ctaHtml(cta: Cta, accent: string): string {
+function ctaHtml(cta: Cta, accent: string, theme: EmailTheme): string {
   const href = safeUrl(cta.url)
   if (!href) return ''
   if (!cta.primary) {
-    return `<a href="${escapeHtml(href)}" style="font-family:${FONT};font-size:14px;color:${MERIDIAN};text-decoration:underline;margin-right:20px;">${escapeHtml(cta.label)}</a>`
+    return `<a href="${escapeHtml(href)}" style="font-family:${theme.font};font-size:14px;color:${theme.accent};text-decoration:underline;margin-right:20px;">${escapeHtml(cta.label)}</a>`
   }
   // Table-wrapped button: padding on an <a> is unreliable in Outlook, padding
   // on a <td> is not.
   return (
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">` +
-    `<tr><td bgcolor="${accent}" style="border-radius:10px;">` +
-    `<a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:10px;">${escapeHtml(cta.label)}</a>` +
+    `<tr><td bgcolor="${accent}" style="border-radius:${theme.controlRadius};">` +
+    `<a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 22px;font-family:${theme.font};font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:${theme.controlRadius};">${escapeHtml(cta.label)}</a>` +
     `</td></tr></table>`
   )
 }
 
 function shell(input: ShellInput): string {
-  const accent = input.accent ?? MERIDIAN
-  const rows = input.rows.map(detailRowHtml).join('')
-  const primary = input.ctas.filter((c) => c.primary).map((c) => ctaHtml(c, accent)).join('')
-  const secondary = input.ctas.filter((c) => !c.primary).map((c) => ctaHtml(c, accent)).join('')
+  const theme = input.theme ?? DEFAULT_EMAIL_THEME
+  const accent = input.accent ?? theme.accent
+  const wordmarkColor = theme.wordmarkAccent ? accent : theme.ink
+  const rows = input.rows.map((row) => detailRowHtml(row, theme)).join('')
+  const primary = input.ctas.filter((c) => c.primary).map((c) => ctaHtml(c, accent, theme)).join('')
+  const secondary = input.ctas.filter((c) => !c.primary).map((c) => ctaHtml(c, accent, theme)).join('')
   const notes = (input.notes ?? [])
     .map(
       (n) =>
-        `<p style="margin:0 0 8px 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">${escapeHtml(n)}</p>`,
+        `<p style="margin:0 0 8px 0;font-family:${theme.font};font-size:12px;line-height:18px;color:${theme.muted};">${escapeHtml(n)}</p>`,
     )
     .join('')
 
@@ -250,17 +301,17 @@ function shell(input: ShellInput): string {
     `<meta http-equiv="X-UA-Compatible" content="IE=edge">` +
     `<meta name="color-scheme" content="light">` +
     `<meta name="supported-color-schemes" content="light">` +
-    `</head><body style="margin:0;padding:0;background-color:${PAPER};" bgcolor="${PAPER}">` +
+    `</head><body style="margin:0;padding:0;background-color:${theme.paper};" bgcolor="${theme.paper}">` +
     // Hidden preheader: what the inbox shows next to the subject. Without it,
     // clients scrape the first visible text, which here is the wordmark.
     `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(input.preheader)}</div>` +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${PAPER};margin:0;padding:0;">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${theme.paper};margin:0;padding:0;">` +
     `<tr><td align="center" style="padding:24px 12px;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid ${LINE};border-radius:16px;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid ${theme.line};border-radius:${theme.cardRadius};">` +
     // Wordmark as text, not an image: images are blocked by default in Outlook
     // and Gmail, and a confirmation must not open on a broken placeholder.
-    `<tr><td style="padding:24px 28px 8px 28px;font-family:${MONO};font-size:16px;font-weight:600;letter-spacing:-0.02em;color:${INK};">` +
-    `${escapeHtml(input.brandName.toLowerCase())}<span style="color:${accent};">:</span>` +
+    `<tr><td style="padding:24px 28px 8px 28px;font-family:${theme.mono};font-size:16px;font-weight:600;letter-spacing:-0.02em;color:${theme.ink};">` +
+    `${escapeHtml(input.brandName.toLowerCase())}<span style="color:${wordmarkColor};">:</span>` +
     `</td></tr>` +
     // The host photo, unlike the wordmark above: optional, decorative, an
     // <img> with real alt text. If it fails to load the row still reserves
@@ -272,10 +323,10 @@ function shell(input: ShellInput): string {
         `style="width:40px;height:40px;border-radius:50%;display:block;object-fit:cover;">` +
         `</td></tr>`
       : '') +
-    `<tr><td style="padding:8px 28px 0 28px;font-family:${FONT};font-size:22px;line-height:30px;font-weight:700;color:${INK};">${escapeHtml(input.heading)}</td></tr>` +
-    `<tr><td style="padding:12px 28px 0 28px;font-family:${FONT};font-size:15px;line-height:23px;color:${INK};">${escapeHtml(input.intro)}</td></tr>` +
+    `<tr><td style="padding:8px 28px 0 28px;font-family:${theme.font};font-size:22px;line-height:30px;font-weight:700;color:${theme.ink};">${escapeHtml(input.heading)}</td></tr>` +
+    `<tr><td style="padding:12px 28px 0 28px;font-family:${theme.font};font-size:15px;line-height:23px;color:${theme.ink};">${escapeHtml(input.intro)}</td></tr>` +
     `<tr><td style="padding:20px 28px 0 28px;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:${PAPER_DIM};border-radius:10px;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:${theme.paperDim};border-radius:${theme.controlRadius};">` +
     `<tr><td style="padding:16px 18px;">` +
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">${rows}</table>` +
     `</td></tr></table></td></tr>` +
@@ -284,10 +335,10 @@ function shell(input: ShellInput): string {
     // border-top, and without it the rule sits directly under the link text.
     (secondary ? `<tr><td style="padding:4px 28px 20px 28px;">${secondary}</td></tr>` : '') +
     (notes
-      ? `<tr><td style="padding:22px 28px 24px 28px;border-top:1px solid ${LINE};">${notes}</td></tr>`
+      ? `<tr><td style="padding:22px 28px 24px 28px;border-top:1px solid ${theme.line};">${notes}</td></tr>`
       : `<tr><td style="padding:24px;"></td></tr>`) +
     `</table>` +
-    `<div style="font-family:${FONT};font-size:11px;line-height:18px;color:${MUTED};padding:14px 8px 0 8px;">Sent by ${escapeHtml(input.brandName)}</div>` +
+    `<div style="font-family:${theme.font};font-size:11px;line-height:18px;color:${theme.muted};padding:14px 8px 0 8px;">Sent by ${escapeHtml(input.brandName)}</div>` +
     `</td></tr></table>` +
     `</body></html>`
   )
@@ -409,6 +460,7 @@ export function bookingConfirmationForGuest(ctx: BookingEmailContext): EmailCont
   const tz = zoneFor(ctx, 'guest')
   const brandName = brandOf(ctx)
   const input: ShellInput = {
+    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.eventType.title} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'Your meeting is confirmed',
@@ -438,6 +490,7 @@ export function bookingConfirmationForHost(ctx: BookingEmailContext): EmailConte
   const tz = zoneFor(ctx, 'host')
   const brandName = brandOf(ctx)
   const input: ShellInput = {
+    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.booking.guestName} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'New booking',
@@ -487,6 +540,7 @@ export function bookingRescheduled(ctx: RescheduleEmailContext): EmailContent {
   })
   const who = ctx.audience === 'guest' ? hostNames(ctx) : ctx.booking.guestName
   const input: ShellInput = {
+    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `New time: ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'Your meeting moved',
@@ -548,10 +602,11 @@ export function bookingCancelled(ctx: CancellationEmailContext): EmailContent {
       : `${by} cancelled ${ctx.eventType.title}. It has been removed from the calendar.`
     : `${ctx.eventType.title} has been cancelled and removed from the calendar.`
   const input: ShellInput = {
+    theme: BOOKING_EMAIL_THEME,
     brandName,
     // Red only here, and only as the accent: cancellation is the one state
     // where the brand's discipline rule (green means confirmed) must not apply.
-    accent: DANGER,
+    accent: BOOKING_EMAIL_THEME.danger,
     preheader: `${ctx.eventType.title} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'This meeting was cancelled',
     intro,
@@ -573,6 +628,7 @@ export function bookingReminder(ctx: ReminderEmailContext): EmailContent {
   const lead = ctx.when === '24h' ? 'tomorrow' : 'in an hour'
   const who = ctx.audience === 'guest' ? hostNames(ctx) : ctx.booking.guestName
   const input: ShellInput = {
+    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.eventType.title} ${lead} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: ctx.when === '24h' ? 'Your meeting is tomorrow' : 'Your meeting starts in an hour',

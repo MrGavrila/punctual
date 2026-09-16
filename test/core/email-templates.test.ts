@@ -8,6 +8,7 @@ import {
   bookingReminder,
   escapeHtml,
   formatWhen,
+  hostAddedEmail,
   magicLinkEmail,
   sanitizeHeader,
   type BookingEmailContext,
@@ -208,11 +209,82 @@ describe('email-client safety', () => {
     expect(html).toContain('max-width:600px')
   })
 
-  it('paints the brand colours', () => {
-    const html = bookingConfirmationForGuest(ctx()).html
-    expect(html).toContain('#0E7C4C') // meridian green CTA
-    expect(html).toContain('#FAFAF7') // paper
-    expect(html).toContain('#0F1512') // ink
+  it('uses the Kisielowa booking palette and square geometry throughout the booking lifecycle', () => {
+    const moved = booking({ startUtc: START + 86_400_000, endUtc: START + 86_400_000 + 30 * 60_000 })
+    const cancelled = booking({ status: 'cancelled', cancelledAt: START - 3600_000 })
+    const mails = [
+      bookingConfirmationForGuest(ctx()),
+      bookingConfirmationForHost(ctx()),
+      bookingRescheduled({
+        ...ctx({ booking: moved }),
+        audience: 'guest' as const,
+        previous: { startUtc: START, endUtc: START + 30 * 60_000 },
+      }),
+      bookingCancelled({
+        ...ctx({ booking: cancelled }),
+        audience: 'host' as const,
+        cancelledBy: 'guest' as const,
+        rebookUrl: 'https://punctual.example/grace/intro',
+      }),
+      bookingReminder({ ...ctx(), audience: 'guest' as const, when: '24h' as const }),
+    ]
+
+    for (const { html } of mails) {
+      expect(html).toContain('background-color:#F5F5F5')
+      expect(html).toContain('background-color:#EEEEEE')
+      expect(html).toContain('border:1px solid #DDDDDD')
+      expect(html).toContain('color:#111111')
+      expect(html).toContain('color:#555555')
+      expect(html).toContain('border-radius:2px')
+      expect(html).not.toContain('border-radius:16px')
+      expect(html).not.toContain('border-radius:10px')
+    }
+
+    expect(mails[0]!.html).toContain('bgcolor="#176B55"')
+    expect(mails[3]!.html).toContain('bgcolor="#B53845"')
+  })
+
+  it('keeps non-booking account and team-service mail on the existing Punctual email theme', () => {
+    const accountMail = magicLinkEmail({
+      url: 'https://punctual.example/auth/callback?token=abc123',
+      ip: '203.0.113.42',
+      userAgent: 'Mozilla/5.0',
+      expiresMinutes: 15,
+    })
+    const teamMail = hostAddedEmail({
+      brandName: 'Punctual',
+      hostName: 'Grace Hopper',
+      eventTitle: 'Team intro',
+      teamName: 'Research',
+      schedulingType: 'collective',
+      required: true,
+      scheduleName: null,
+      editorName: 'Ada Lovelace',
+      availabilityUrl: 'https://punctual.example/dashboard/availability',
+    })
+
+    for (const { html } of [accountMail, teamMail]) {
+      expect(html).toContain('#0E7C4C')
+      expect(html).toContain('#FAFAF7')
+      expect(html).toContain('#0F1512')
+      expect(html).toContain('border-radius:16px')
+      expect(html).toContain('border-radius:10px')
+    }
+  })
+
+  it('renders the complete booking wordmark in one black colour for normal and cancelled mail', () => {
+    const branded = ctx({ brandName: 'Dr. Kisielowa' })
+    const confirmed = bookingConfirmationForGuest(branded).html
+    const cancelled = bookingCancelled({
+      ...branded,
+      booking: booking({ status: 'cancelled', cancelledAt: START - 3600_000 }),
+      audience: 'guest',
+      cancelledBy: 'host',
+    }).html
+
+    for (const html of [confirmed, cancelled]) {
+      expect(html).toContain('dr. kisielowa<span style="color:#111111;">:</span>')
+    }
   })
 
   it('declares an explicit charset, so an en dash never turns to mojibake', () => {
@@ -375,7 +447,7 @@ describe('lifecycle templates', () => {
     expect(mail.text).toContain('Grace Hopper cancelled')
     expect(mail.text).toContain('Travelling')
     expect(mail.text).toContain('https://punctual.example/grace/intro')
-    expect(mail.html).toContain('#D92D20')
+    expect(mail.html).toContain('#B53845')
   })
 
   // A note is a message from a person, quoted as one — not a "Reason" row
