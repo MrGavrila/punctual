@@ -45,6 +45,7 @@ const HOST_ID = 'usr_host'
 const HOST_EMAIL = 'host@example.test'
 const EVENT_ID = 'evt_1'
 const BOOKING_ID = 'bkg_1'
+const OWNER_FAVICON = 'https://owner.example/favicon.svg'
 
 /** Deterministic 32-byte key material, so the suite needs no secrets. */
 function keyMaterial(seed: number): string {
@@ -131,7 +132,7 @@ const slots: SlotService = {
   },
 }
 
-const app = buildDashboardRoutes(ports, slots)
+const app = buildDashboardRoutes(ports, slots, OWNER_FAVICON)
 
 async function get(path: string, cookie?: string): Promise<Response> {
   return app.fetch(new Request(`${BASE}${path}`, cookie ? { headers: { cookie } } : {}))
@@ -321,6 +322,8 @@ describe('guest manage page', () => {
     const html = await res.text()
     expect(html).toContain('Intro call')
     expect(html).toContain('Cancel this booking')
+    expect(html).toContain(`<link rel="icon" href="${OWNER_FAVICON}" type="image/svg+xml">`)
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
   })
 
   it('refuses a token with a tampered signature', async () => {
@@ -336,6 +339,8 @@ describe('guest manage page', () => {
     expect(html).toContain('This link is not valid')
     expect(html).toContain('Open the link from your latest booking email.')
     expect(html).not.toContain('Links expire')
+    expect(html).toContain(`<link rel="icon" href="${OWNER_FAVICON}" type="image/svg+xml">`)
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
   })
 
   it('refuses a missing token', async () => {

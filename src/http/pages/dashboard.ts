@@ -2334,6 +2334,8 @@ export function settingsPage(d: SettingsPageData): string {
 
 export interface BookingDetailPageData {
   brandName: string
+  /** Deployment-specific favicon for the guest-facing management flow. */
+  faviconHref?: string
   booking: Booking
   /** Null when the event type has since been deleted; the booking still stands. */
   eventType: EventType | null
@@ -2359,8 +2361,12 @@ export interface BookingDetailPageData {
   newStart?: number
 }
 
-export function guestBookingResultPage(brandName: string, result: BookingResultData): string {
-  return shellHead({ title: `${result.title} · ${brandName}`, brandName }) +
+export function guestBookingResultPage(brandName: string, result: BookingResultData, faviconHref?: string): string {
+  return shellHead({
+    title: `${result.title} · ${brandName}`,
+    brandName,
+    ...(faviconHref ? { faviconHref } : {}),
+  }) +
     bookingResultCard(result) + shellFoot(false)
 }
 
@@ -2389,7 +2395,11 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
   const tokenField = `<input type="hidden" name="token" value="${escapeHtml(d.token)}">`
 
   return (
-    shellHead({ title: `${title} · ${d.brandName}`, brandName: d.brandName }) +
+    shellHead({
+      title: `${title} · ${d.brandName}`,
+      brandName: d.brandName,
+      ...(d.faviconHref ? { faviconHref: d.faviconHref } : {}),
+    }) +
     `<section class="pu-card" aria-label="Your booking">
   <p><span class="pu-badge"${cancelled ? ' style="background:var(--pu-paper-dim);color:var(--pu-ink-500)"' : ''}>${escapeHtml(statusLabel(d.booking))}</span></p>
   <h1>${escapeHtml(title)}</h1>
@@ -2513,11 +2523,11 @@ function cancelSection(d: BookingDetailPageData, tokenField: string): string {
 }
 
 /** Shared "this link is not valid" page. Says nothing about why. */
-export function manageLinkErrorPage(brandName: string): string {
+export function manageLinkErrorPage(brandName: string, faviconHref?: string): string {
   return guestBookingResultPage(brandName, {
     title: 'This link is not valid', badge: 'Link unavailable', tone: 'error',
     messages: ['Open the link from your latest booking email.'],
-  })
+  }, faviconHref)
 }
 
 // ---------------------------------------------------------------------------

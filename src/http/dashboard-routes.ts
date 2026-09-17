@@ -178,7 +178,7 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
 export function buildDashboardRoutes(
   ports: EnginePorts,
   slots: SlotService,
-  loginFaviconHref?: string,
+  siteFaviconHref?: string,
 ): App {
   const app: App = new Hono<{ Bindings: Env; Variables: Vars }>()
   const brandName = ports.config.brandName
@@ -290,7 +290,7 @@ export function buildDashboardRoutes(
       brandName,
       providers: ports.calendars.available(),
       signupsOpen: policy.mode === 'open',
-      ...(loginFaviconHref ? { faviconHref: loginFaviconHref } : {}),
+      ...(siteFaviconHref ? { faviconHref: siteFaviconHref } : {}),
     }
   }
 
@@ -3126,7 +3126,7 @@ export function buildDashboardRoutes(
         title: 'Your meeting has been rescheduled', badge: 'Rescheduled', tone: 'success',
         messages: ['An updated confirmation email is on its way.'],
         details: guestBookingResultDetails(booking, eventType, host),
-      }))
+      }, siteFaviconHref))
     }
 
     const startRaw = Number(c.req.query('start'))
@@ -3177,6 +3177,7 @@ export function buildDashboardRoutes(
         // Pass the RAW purpose. Collapsing 'manage' to 'reschedule' here is
         // what hid the cancel form from every real guest.
         purpose,
+        ...(siteFaviconHref ? { faviconHref: siteFaviconHref } : {}),
         ...(offered ? { slots: offered } : {}),
         ...(selectedDate ? { selectedDate } : {}),
         ...(Number.isFinite(startParam) ? { newStart: startParam } : {}),
@@ -3210,7 +3211,7 @@ export function buildDashboardRoutes(
     return c.html(guestBookingResultPage(brandName, {
       title: 'Your booking has been cancelled', badge: 'Cancelled', tone: 'neutral',
       details: guestBookingResultDetails(verified.booking, eventType, host),
-    }))
+    }, siteFaviconHref))
   }))
 
   app.post('/booking/:id/reschedule', guestBookingAction(async (c) => {
@@ -3263,7 +3264,7 @@ export function buildDashboardRoutes(
         } : {
           title: 'Your booking was already updated', badge: 'Booking changed', tone: 'error',
           messages: ['Check your latest booking email for the current details.'],
-        }),
+        }, siteFaviconHref),
         409,
       )
     }
@@ -3281,7 +3282,7 @@ export function buildDashboardRoutes(
   function manageActionError(c: Ctx, title: string, message: string, action?: BookingResultData['action']): Response {
     return c.html(guestBookingResultPage(brandName, {
       title, badge: 'Unable to complete', tone: 'error', messages: [message], ...(action ? { action } : {}),
-    }), 400)
+    }, siteFaviconHref), 400)
   }
 
   /** A write can succeed before a later step throws. Never invite a blind POST retry. */
@@ -3297,7 +3298,7 @@ export function buildDashboardRoutes(
             'Your booking may already have been updated.',
             'Check your latest booking email before trying again.',
           ],
-        }), 500)
+        }, siteFaviconHref), 500)
       }
     }
   }
@@ -3356,7 +3357,7 @@ export function buildDashboardRoutes(
   }
 
   function manageError(c: Ctx, _message: string): Response | Promise<Response> {
-    return c.html(manageLinkErrorPage(brandName), 400)
+    return c.html(manageLinkErrorPage(brandName, siteFaviconHref), 400)
   }
 
   // ===========================================================================

@@ -85,9 +85,14 @@ describe('booking-only public site mode', () => {
 
   it('does not expose Punctual attribution on guest management errors', async () => {
     const response = await request('/booking/not-a-booking?token=invalid')
+    const html = await response.text()
 
     expect(response.status).toBe(400)
-    expect(await response.text()).not.toContain('https://punctual.sh')
+    expect(html).not.toContain('https://punctual.sh')
+    expect(html).toContain(
+      '<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">',
+    )
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
   })
 
   it('does not expose Punctual attribution on authentication errors', async () => {
