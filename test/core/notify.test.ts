@@ -94,6 +94,7 @@ function fakePorts(
     bookings?: Record<string, Booking>
     connectionOwners?: Record<string, string>
     baseUrl?: string
+    guestEmailEventLabel?: string
   } = {},
 ): EnginePorts {
   return {
@@ -139,6 +140,7 @@ function fakePorts(
       fromEmail: 'noreply@punctual.example',
       fromName: 'Punctual',
       telemetryEnabled: false,
+      ...(options.guestEmailEventLabel ? { guestEmailEventLabel: options.guestEmailEventLabel } : {}),
     },
   } as unknown as EnginePorts
 }
@@ -217,6 +219,51 @@ describe('booking notifications — host management link', () => {
     const guestEmail = emailTo(sent, replacement.guestEmail).message
     expect(guestEmail.html).not.toContain('/dashboard/bookings/')
     expect(guestEmail.text).not.toContain('/dashboard/bookings/')
+  })
+})
+
+describe('booking notifications — guest event label', () => {
+  it('uses the deployment label in guest lifecycle mail without renaming host mail', async () => {
+    const sent: QueueMessage[] = []
+    const original = booking({ id: 'bk_original' })
+    const moved = booking({
+      id: 'bk_moved',
+      rescheduleOf: original.id,
+      startUtc: START + 3_600_000,
+      endUtc: START + 5_400_000,
+    })
+    const type = eventType({ title: '30 min intro' })
+    const ports = fakePorts(sent, {
+      bookings: { [original.id]: original },
+      guestEmailEventLabel: 'Introductory call',
+    })
+
+    await notifyBookingCreated({ ports, booking: original, eventType: type, host })
+    await notifyBookingRescheduled({ ports, booking: moved, previous: original, eventType: type, host })
+    await notifyBookingCancelled({
+      ports,
+      booking: { ...moved, status: 'cancelled', cancelledAt: START },
+      eventType: type,
+      host,
+      cancelledBy: 'guest',
+    })
+
+    const emails = sent.filter((message) => message.kind === 'email')
+    const guestEmails = emails.filter((message) => message.message.to === original.guestEmail)
+    const hostEmails = emails.filter((message) => message.message.to === host.email)
+    expect(guestEmails).toHaveLength(3)
+    expect(hostEmails).toHaveLength(3)
+
+    for (const { message } of guestEmails) {
+      expect(message.text.split('\n')).toContain('What: Introductory call')
+      expect(message.text.split('\n')).not.toContain('What: 30 min intro')
+      expect(message.html).toContain('>Introductory call</td>')
+    }
+    for (const { message } of hostEmails) {
+      expect(message.text.split('\n')).toContain('What: 30 min intro')
+      expect(message.text.split('\n')).not.toContain('What: Introductory call')
+      expect(message.html).toContain('>30 min intro</td>')
+    }
   })
 })
 

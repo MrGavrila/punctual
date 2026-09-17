@@ -155,6 +155,9 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
     host,
     ...(ctx.hosts ? { hosts: ctx.hosts } : {}),
     brandName: ports.config.brandName,
+    ...(ports.config.guestEmailEventLabel
+      ? { guestEmailEventLabel: ports.config.guestEmailEventLabel }
+      : {}),
     supportEmail: ports.config.supportEmail,
     baseUrl: ports.config.baseUrl,
     ...(manageUrl ? { rescheduleUrl: manageUrl, cancelUrl: manageUrl } : {}),
@@ -415,6 +418,9 @@ export async function prepareBookingCancellationEmails(
     ...(ctx.actor ? { cancelledByName: ctx.actor.name || ctx.actor.slug } : {}),
     ...(ctx.reason ? { reason: ctx.reason } : {}),
     brandName: ports.config.brandName,
+    ...(ports.config.guestEmailEventLabel
+      ? { guestEmailEventLabel: ports.config.guestEmailEventLabel }
+      : {}),
     supportEmail: ports.config.supportEmail,
   }
 
@@ -558,6 +564,9 @@ export async function notifyBookingRescheduled(ctx: {
     ...(ctx.hosts ? { hosts: ctx.hosts } : {}),
     previous: { startUtc: ctx.previous.startUtc, endUtc: ctx.previous.endUtc },
     brandName: ports.config.brandName,
+    ...(ports.config.guestEmailEventLabel
+      ? { guestEmailEventLabel: ports.config.guestEmailEventLabel }
+      : {}),
     supportEmail: ports.config.supportEmail,
     ...(manageUrl ? { rescheduleUrl: manageUrl, cancelUrl: manageUrl } : {}),
   }

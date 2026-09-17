@@ -83,6 +83,9 @@ crons = ["*/5 * * * *"]
 # custom domain. Used in every link the engine writes into emails and .ics.
 BASE_URL = "https://book.kisielowa.com"
 BRAND_NAME = "Dr. Kisielowa"
+# Guest-facing label for the `What` row only. Subjects, host mail and calendar
+# invitations continue to use the event type's configured title.
+GUEST_EMAIL_EVENT_LABEL = "Introductory call"
 # Optional: the legal entity named on /privacy and /terms (defaults to
 # BRAND_NAME), and a live booking page to embed on your landing page.
 LEGAL_OPERATOR = "Irina Kisielowa"

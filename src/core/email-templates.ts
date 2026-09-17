@@ -44,6 +44,8 @@ export interface BookingEmailContext {
   /** All participating hosts for a collective event. Defaults to `[host]`. */
   hosts?: User[]
   brandName?: string
+  /** Guest-facing replacement for the `What` row only. */
+  guestEmailEventLabel?: string
   /** Guest manage links (ADR-0005 §4). Omitted when the booking is in the past. */
   rescheduleUrl?: string
   cancelUrl?: string
@@ -404,7 +406,10 @@ function answerRows(ctx: BookingEmailContext): DetailRow[] {
 function baseRows(ctx: BookingEmailContext, audience: EmailAudience, tz: string): DetailRow[] {
   const { booking, eventType } = ctx
   const rows: DetailRow[] = [
-    { label: 'What', value: eventType.title },
+    {
+      label: 'What',
+      value: audience === 'guest' ? ctx.guestEmailEventLabel ?? eventType.title : eventType.title,
+    },
     { label: 'When', value: formatWhen(booking.startUtc, booking.endUtc, tz) },
     { label: 'Duration', value: `${eventType.durationMinutes} minutes` },
     { label: 'Where', value: describeLocation(eventType, booking.conferenceUrl) },

@@ -936,6 +936,12 @@ export interface EngineConfig {
   baseUrl: string
   brandName: string
   /**
+   * Optional deployment-wide label for the guest email's `What` row.
+   * The event title remains unchanged in subjects, calendar invitations and
+   * host-facing mail. Intended for single-event branded deployments.
+   */
+  guestEmailEventLabel?: string
+  /**
    * The legal entity operating this deployment, named on /privacy and /terms
    * as the data controller. Defaults to `brandName` when unset — correct for
    * nobody in particular, which is the point: a self-hoster who deploys the

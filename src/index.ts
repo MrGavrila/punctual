@@ -40,6 +40,7 @@ export interface Env {
   TASKS?: Queue
   BASE_URL: string
   BRAND_NAME?: string
+  GUEST_EMAIL_EVENT_LABEL?: string
   LEGAL_OPERATOR?: string
   DEMO_BOOKING_PATH?: string
   SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID?: string
@@ -226,6 +227,9 @@ export function buildPorts(env: Env): EnginePorts {
     config: {
       baseUrl,
       brandName: env.BRAND_NAME ?? 'Punctual',
+      ...(env.GUEST_EMAIL_EVENT_LABEL?.trim()
+        ? { guestEmailEventLabel: env.GUEST_EMAIL_EVENT_LABEL.trim() }
+        : {}),
       ...(env.LEGAL_OPERATOR ? { legalOperator: env.LEGAL_OPERATOR } : {}),
       ...(env.DEMO_BOOKING_PATH ? { demoBookingPath: env.DEMO_BOOKING_PATH } : {}),
       ...(env.SINGLE_ACTIVE_BOOKING_EVENT_TYPE_ID?.trim()
