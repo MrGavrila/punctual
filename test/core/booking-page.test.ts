@@ -53,7 +53,7 @@ function pageData(patch: Partial<BookingPageData> = {}): BookingPageData {
 }
 
 describe('guest result cards', () => {
-  it('keeps the initial confirmation details and directs later management through the latest email', () => {
+  it('keeps the initial confirmation details and uses one concise status sentence', () => {
     const html = bookedConfirmation({
       eventTitle: 'Intro call', hostName: 'Grace Hopper', start: Date.UTC(2026, 8, 21, 9),
       guestTimezone: 'Europe/Amsterdam',
@@ -61,9 +61,10 @@ describe('guest result cards', () => {
     expect(html).toContain('You&#39;re booked')
     expect(html).toContain('Monday, September 21 at 11:00')
     expect(html).toContain('Europe/Amsterdam')
-    expect(html).toContain('use the links in your latest confirmation email')
-    expect(html).toContain('check your spam folder')
-    expect(html).toContain('You can close this page')
+    expect(html).toContain('<p class="pu-muted">A confirmation email is on its way.</p>')
+    expect(html).not.toContain('latest confirmation email')
+    expect(html).not.toContain('spam folder')
+    expect(html).not.toContain('close this page')
     expect(html).not.toContain('Reschedule or cancel')
     expect(html).not.toContain('<a class="pu-btn')
     expect(html).not.toContain('<form')
@@ -72,7 +73,7 @@ describe('guest result cards', () => {
   it('escapes result text, meeting details and action attributes', () => {
     const hostile = '<img src=x onerror="alert(1)">'
     const html = bookingResultCard({
-      title: hostile, badge: hostile, tone: 'error', message: hostile,
+      title: hostile, badge: hostile, tone: 'error', messages: [hostile],
       details: { eventTitle: hostile, hostName: hostile, start: 0, guestTimezone: 'UTC', locationLabel: hostile },
       action: { label: hostile, href: '/booking/id?token=" onmouseover="alert(1)' },
     })
@@ -83,9 +84,28 @@ describe('guest result cards', () => {
     expect(html).toContain('pu-badge-danger')
   })
 
+  it('renders zero, one or two supporting sentences as separate paragraphs', () => {
+    const empty = bookingResultCard({ title: 'Cancelled', badge: 'Cancelled', tone: 'neutral' })
+    expect(empty).not.toContain('pu-result-copy')
+
+    const one = bookingResultCard({
+      title: 'Booked', badge: 'Confirmed', tone: 'success', messages: ['One sentence.'],
+    })
+    expect(one).toContain('<div class="pu-result-copy">\n    <p class="pu-muted">One sentence.</p>\n  </div>')
+
+    const two = bookingResultCard({
+      title: 'Check the result', badge: 'Please check', tone: 'error',
+      messages: ['First sentence.', 'Second sentence.'],
+    })
+    expect(two).toContain('<p class="pu-muted">First sentence.</p>')
+    expect(two).toContain('<p class="pu-muted">Second sentence.</p>')
+    expect(two.match(/<p class="pu-muted">/g)).toHaveLength(2)
+  })
+
   it('keeps the selected day, timezone and embed mode in the public slot-conflict action', () => {
     const html = slotTakenPage(pageData({ embed: true }), '2026-09-21')
     expect(html).toContain('pu-card pu-confirm')
+    expect(html).toContain('<p class="pu-muted">Choose another available time.</p>')
     expect(html).toContain('date=2026-09-21&amp;tz=America%2FNew_York&amp;embed=1')
     expect(html).not.toContain('<form')
   })

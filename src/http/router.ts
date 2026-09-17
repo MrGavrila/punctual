@@ -498,7 +498,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     if (!limit.allowed) {
       return c.html(
         publicBookingHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
-          bookingResultCard({ title: 'Too many bookings', badge: 'Please wait', tone: 'error', message: 'Please wait a little and try again.' }) +
+          bookingResultCard({ title: 'Too many bookings', badge: 'Please wait', tone: 'error', messages: ['Please wait before trying again.'] }) +
           publicBookingFoot(),
         429,
         { 'retry-after': String(Math.ceil((limit.resetAt - ports.clock.now()) / 1000)) },
@@ -628,7 +628,10 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         publicBookingHead({ title: 'Please check your booking', brandName: ports.config.brandName }) +
           bookingResultCard({
             title: 'We could not verify the result', badge: 'Please check your booking', tone: 'error',
-            message: 'Your booking may already have been created. Check your email for a confirmation before trying again. If you are unsure, contact the host.',
+            messages: [
+              'Your booking may already be confirmed.',
+              'Check your email before trying again.',
+            ],
           }) + publicBookingFoot(embed),
         500,
       )
@@ -653,7 +656,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           ? slotTakenPage(data, localDateString(start, guestTimezone))
           : bookingResultCard({
               title: 'Could not complete booking', badge: 'Unable to complete', tone: 'error',
-              message: outcome.detail ?? 'Please try another time.',
+              messages: [outcome.detail ?? 'Choose another available time.'],
               action: {
                 label: 'Choose another time',
                 href: `/${encodeURIComponent(userSlug)}/${encodeURIComponent(eventSlug)}?date=${encodeURIComponent(localDateString(start, guestTimezone))}&tz=${encodeURIComponent(guestTimezone)}${embed ? '&embed=1' : ''}`,
@@ -787,7 +790,7 @@ async function bookingPageRateLimited(
   if (limit.allowed) return undefined
   return c.html(
     publicBookingHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
-      errorPage('Too many requests', 'Please wait a little and try again.') +
+      errorPage('Too many requests', 'Please wait before trying again.') +
       publicBookingFoot(),
     429,
     { 'retry-after': String(Math.ceil((limit.resetAt - ports.clock.now()) / 1000)) },

@@ -95,7 +95,6 @@ import { MAX_DECODED_PIXELS,
   thumbKeyFor, fitKeyFor, originalKeyCandidates, isLogoShape, COMPANY_LOGO_KEY, COMPANY_LOGO_SHAPE, companyLogoFrom } from '../core/domain/media.js'
 import { resizeToFitThumbnail, resizeToSquareThumbnail } from '../adapters/image/resize.js'
 import {
-  GUEST_MANAGEMENT_EMAIL_GUIDANCE,
   errorPage,
   shellFoot,
   shellHead,
@@ -3125,7 +3124,7 @@ export function buildDashboardRoutes(
     if (c.req.query('moved') === '1' && booking.status === 'confirmed' && booking.rescheduleOf !== null) {
       return c.html(guestBookingResultPage(brandName, {
         title: 'Your meeting has been rescheduled', badge: 'Rescheduled', tone: 'success',
-        message: `An updated calendar invitation is on its way to your inbox. ${GUEST_MANAGEMENT_EMAIL_GUIDANCE}`,
+        messages: ['An updated confirmation email is on its way.'],
         details: guestBookingResultDetails(booking, eventType, host),
       }))
     }
@@ -3198,7 +3197,7 @@ export function buildDashboardRoutes(
     // A booking that is already cancelled or superseded must not be acted on
     // again: without this, one link stays replayable forever.
     if (verified.booking.status !== 'confirmed') {
-      return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
+      return manageActionError(c, 'This booking is no longer active', 'Check your latest booking email for the current details.')
     }
 
     const [eventType, host] = await Promise.all([
@@ -3206,11 +3205,10 @@ export function buildDashboardRoutes(
       repos.users.byId(verified.booking.hostUserId),
     ])
     const cancelled = await cancelBooking(repos, verified.booking, { cancelledBy: 'guest' })
-    if (!cancelled) return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
+    if (!cancelled) return manageActionError(c, 'This booking is no longer active', 'Check your latest booking email for the current details.')
 
     return c.html(guestBookingResultPage(brandName, {
       title: 'Your booking has been cancelled', badge: 'Cancelled', tone: 'neutral',
-      message: 'The time has been released. No further action is needed.',
       details: guestBookingResultDetails(verified.booking, eventType, host),
     }))
   }))
@@ -3229,7 +3227,7 @@ export function buildDashboardRoutes(
     // which throws an uncaught RangeError instead of this clean error page.
     // 8.64e15 is the JS Date range.
     if (!Number.isSafeInteger(start) || Math.abs(start) > 8.64e15) {
-      return manageActionError(c, 'No new time was chosen', 'Choose an available time for your meeting.', {
+      return manageActionError(c, 'No new time was chosen', 'Select a new date and time.', {
         label: 'Choose another time', href: `/booking/${encodeURIComponent(verified.booking.id)}?token=${encodeURIComponent(token)}`,
       })
     }
@@ -3240,16 +3238,16 @@ export function buildDashboardRoutes(
     // each submission creates ANOTHER booking that consumes another slot on
     // the host's calendar.
     if (old.status !== 'confirmed') {
-      return manageActionError(c, 'This booking is no longer active', 'Use the latest email to check whether your booking was moved or cancelled.')
+      return manageActionError(c, 'This booking is no longer active', 'Check your latest booking email for the current details.')
     }
     if (old.endUtc <= ports.clock.now()) {
-      return manageActionError(c, 'This booking has ended', 'This booking has ended and can no longer be moved.')
+      return manageActionError(c, 'This booking has ended', 'Past bookings cannot be rescheduled.')
     }
 
     const repos = ports.repositories(guestScope())
     const eventType = await repos.eventTypes.byId(old.eventTypeId)
     const host = await repos.users.byId(old.hostUserId)
-    if (!eventType || !host) return manageActionError(c, 'This booking can no longer be moved', 'Please contact the host for help with your booking.')
+    if (!eventType || !host) return manageActionError(c, 'This booking can no longer be moved', 'This booking cannot be rescheduled online.')
 
     const hosts = await hostsForBooking(repos, eventType, old, host)
     const moved = await rescheduleBooking(repos, old, eventType, host, hosts, start)
@@ -3257,14 +3255,14 @@ export function buildDashboardRoutes(
       return c.html(
         guestBookingResultPage(brandName, moved.reason === 'slot_taken' ? {
           title: 'That time is no longer available', badge: 'Time unavailable', tone: 'error',
-          message: 'Check your booking and choose another available time.',
+          messages: ['Choose another available time.'],
           action: {
             label: 'Choose another time',
             href: `/booking/${encodeURIComponent(old.id)}?token=${encodeURIComponent(token)}&date=${encodeURIComponent(localDateString(start, old.guestTimezone))}`,
           },
         } : {
           title: 'Your booking was already updated', badge: 'Booking changed', tone: 'error',
-          message: 'Another request changed this booking. Use the latest email to check the current details before making another change.',
+          messages: ['Check your latest booking email for the current details.'],
         }),
         409,
       )
@@ -3282,7 +3280,7 @@ export function buildDashboardRoutes(
 
   function manageActionError(c: Ctx, title: string, message: string, action?: BookingResultData['action']): Response {
     return c.html(guestBookingResultPage(brandName, {
-      title, badge: 'Unable to complete', tone: 'error', message, ...(action ? { action } : {}),
+      title, badge: 'Unable to complete', tone: 'error', messages: [message], ...(action ? { action } : {}),
     }), 400)
   }
 
@@ -3295,7 +3293,10 @@ export function buildDashboardRoutes(
         console.error('[punctual] guest booking action result could not be verified')
         return c.html(guestBookingResultPage(brandName, {
           title: 'We could not verify the result', badge: 'Please check your booking', tone: 'error',
-          message: 'The change may already have completed. Check your booking using the latest email before trying again. If you are unsure, contact the host.',
+          messages: [
+            'Your booking may already have been updated.',
+            'Check your latest booking email before trying again.',
+          ],
         }), 500)
       }
     }
@@ -3354,8 +3355,8 @@ export function buildDashboardRoutes(
     return result.allowed
   }
 
-  function manageError(c: Ctx, message: string): Response | Promise<Response> {
-    return c.html(manageLinkErrorPage(brandName, message), 400)
+  function manageError(c: Ctx, _message: string): Response | Promise<Response> {
+    return c.html(manageLinkErrorPage(brandName), 400)
   }
 
   // ===========================================================================

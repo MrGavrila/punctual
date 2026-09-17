@@ -463,6 +463,8 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
   gap:1rem;flex-wrap:wrap}
 .pu-confirm-details dt{color:var(--pu-text-secondary);font-size:.8125rem;font-weight:600;margin:0}
 .pu-confirm-details dd{margin:0;text-align:right}
+.pu-result-copy{display:grid;gap:.25rem;margin:1.25rem 0 0}
+.pu-result-copy p{margin:0}
 
 .pu-nav-link{text-decoration:none;color:var(--pu-text-secondary);font-weight:500;
   padding:.35rem 0;border-bottom:2px solid transparent}

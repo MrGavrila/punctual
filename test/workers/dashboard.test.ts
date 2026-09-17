@@ -332,7 +332,10 @@ describe('guest manage page', () => {
 
     const res = await get(`/booking/${BOOKING_ID}?token=${encodeURIComponent(forged)}`)
     expect(res.status).toBe(400)
-    expect(await res.text()).toContain('This link is not valid')
+    const html = await res.text()
+    expect(html).toContain('This link is not valid')
+    expect(html).toContain('Open the link from your latest booking email.')
+    expect(html).not.toContain('Links expire')
   })
 
   it('refuses a missing token', async () => {

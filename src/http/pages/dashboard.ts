@@ -2513,10 +2513,10 @@ function cancelSection(d: BookingDetailPageData, tokenField: string): string {
 }
 
 /** Shared "this link is not valid" page. Says nothing about why. */
-export function manageLinkErrorPage(brandName: string, message: string): string {
+export function manageLinkErrorPage(brandName: string): string {
   return guestBookingResultPage(brandName, {
     title: 'This link is not valid', badge: 'Link unavailable', tone: 'error',
-    message: `${message} Links expire or stop working after a move or cancellation. Use the latest email for your current booking.`,
+    messages: ['Open the link from your latest booking email.'],
   })
 }
 

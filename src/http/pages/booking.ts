@@ -741,20 +741,18 @@ export function bookedConfirmation(opts: {
     title: "You're booked",
     badge: 'Confirmed',
     tone: 'success',
-    message: `A calendar invitation is on its way to your inbox. ${GUEST_MANAGEMENT_EMAIL_GUIDANCE}`,
+    messages: ['A confirmation email is on its way.'],
     details: opts,
   })
 }
-
-export const GUEST_MANAGEMENT_EMAIL_GUIDANCE =
-  'To reschedule or cancel, use the links in your latest confirmation email. If the email has not arrived, check your spam folder. You can close this page.'
 
 /** Shared, terminal result of a guest action. Management requires a deliberate navigation. */
 export interface BookingResultData {
   title: string
   badge: string
   tone: 'success' | 'neutral' | 'error'
-  message: string
+  /** Zero to two short supporting sentences, each rendered as its own paragraph. */
+  messages?: readonly [string] | readonly [string, string]
   details?: {
     eventTitle: string
     hostName?: string
@@ -793,7 +791,9 @@ export function bookingResultCard(opts: BookingResultData): string {
     ${details.durationMinutes !== undefined ? `<div><dt>Duration</dt><dd>${escapeHtml(String(details.durationMinutes))} minutes</dd></div>` : ''}
     ${details.locationLabel ? `<div><dt>Where</dt><dd>${escapeHtml(details.locationLabel)}</dd></div>` : ''}
   </dl>` : ''}
-  <p class="pu-muted">${escapeHtml(opts.message)}</p>
+  ${opts.messages?.length ? `<div class="pu-result-copy">
+    ${opts.messages.map((message) => `<p class="pu-muted">${escapeHtml(message)}</p>`).join('\n    ')}
+  </div>` : ''}
   ${opts.action ? `<p style="margin-top:1.25rem">
     <a class="pu-btn pu-btn-ghost" href="${escapeHtml(opts.action.href)}">${escapeHtml(opts.action.label)}</a>
   </p>` : ''}
@@ -811,7 +811,7 @@ export function bookingResultCard(opts: BookingResultData): string {
 export function slotTakenPage(d: BookingPageData, date: string): string {
   return bookingResultCard({
     title: 'That time was just taken', badge: 'Time unavailable', tone: 'error',
-    message: 'Someone booked it while you were filling in the form. Choose another available time.',
+    messages: ['Choose another available time.'],
     action: {
       label: 'See available times',
       href: `${bookingPath(d)}?date=${encodeURIComponent(date)}&tz=${encodeURIComponent(d.guestTimezone)}${d.embed ? '&embed=1' : ''}`,
