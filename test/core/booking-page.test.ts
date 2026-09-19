@@ -269,10 +269,12 @@ describe('public booking page chrome', () => {
     expect(html).toContain('<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">')
   })
 
-  it('leaves the dashboard chrome unchanged when the booking theme is not requested', () => {
+  it('uses the neutral adaptive browser chrome by default', () => {
     const html = shellHead({ title: 'Dashboard', brandName: 'Punctual' })
     expect(html).toContain('<body>')
     expect(html).not.toContain('<body class="pu-booking-theme">')
+    expect(html).toContain('<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)">')
+    expect(html).toContain('<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">')
     expect(html).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
   })
 })

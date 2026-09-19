@@ -18,7 +18,7 @@ export interface OgElement {
   props: { children?: OgElement | OgElement[] | string; style?: Record<string, string | number>; [key: string]: unknown }
 }
 
-/** One face on the card: a PNG data URI when the host uploaded a photo, else an initial on the brand green. */
+/** One face on the card: a PNG data URI when the host uploaded a photo, else an initial on a neutral surface. */
 export interface OgAvatar {
   src?: string
   initial: string
@@ -48,15 +48,15 @@ const SINGLE_SIZE = 220
 const STACK_SIZE = 132
 
 function avatarNode(a: OgAvatar, size: number, overlap = 0): OgElement {
-  const ring = { border: `6px solid ${INK}`, borderRadius: '50%' }
+  const ring = { border: `6px solid ${CANVAS}`, borderRadius: '50%' }
   if (a.src && a.aspect) {
     // A logo in its own proportions: height-aligned, width from the
-    // aspect, capped so a banner stays inside the card, soft corners
+    // aspect, capped so a banner stays inside the card, shared 2px corners
     // rather than a circle.
     const width = Math.min(Math.round(size * a.aspect), 720)
     return {
       type: 'img',
-      props: { src: a.src, width, height: size, style: { width: `${width}px`, height: `${size}px`, objectFit: 'contain', borderRadius: '16px' } },
+      props: { src: a.src, width, height: size, style: { width: `${width}px`, height: `${size}px`, objectFit: 'contain', borderRadius: '2px' } },
     }
   }
   if (a.src) {
@@ -81,8 +81,8 @@ function avatarNode(a: OgAvatar, size: number, overlap = 0): OgElement {
         width: `${size}px`,
         height: `${size}px`,
         marginLeft: `${-overlap}px`,
-        backgroundColor: '#0E7C4C',
-        color: PAPER,
+        backgroundColor: SURFACE,
+        color: INK,
         fontFamily: MONO,
         fontSize: `${Math.round(size * 0.42)}px`,
         fontWeight: 600,
@@ -109,9 +109,9 @@ function avatarsNode(avatars: OgAvatar[], extraCount: number): OgElement {
           height: `${STACK_SIZE}px`,
           marginLeft: '-28px',
           borderRadius: '50%',
-          border: `6px solid ${INK}`,
-          backgroundColor: '#2A332E',
-          color: PAPER,
+          border: `6px solid ${CANVAS}`,
+          backgroundColor: SURFACE,
+          color: INK,
           fontFamily: MONO,
           fontSize: '44px',
           fontWeight: 600,
@@ -123,11 +123,10 @@ function avatarsNode(avatars: OgAvatar[], extraCount: number): OgElement {
   return { type: 'div', props: { style: { display: 'flex', alignItems: 'center' }, children: faces } }
 }
 
-const INK = '#0F1512'
-const PAPER = '#FAFAF7'
-const SIGNAL_GREEN = '#1FC16B'
-/** Paper at reduced opacity reads as "muted label" without a third color token. */
-const PAPER_MUTED = 'rgba(250,250,247,0.55)'
+const INK = '#111111'
+const CANVAS = '#F5F5F5'
+const SURFACE = '#EEEEEE'
+const MUTED = '#555555'
 
 const MONO = 'IBM Plex Mono'
 const DISPLAY = 'Schibsted Grotesk'
@@ -153,7 +152,7 @@ export function buildOgCard(props: OgCardProps): OgElement {
         flexDirection: 'column',
         width: '1200px',
         height: '630px',
-        backgroundColor: INK,
+        backgroundColor: CANVAS,
         padding: '64px',
         fontFamily: DISPLAY,
       },
@@ -174,14 +173,14 @@ export function buildOgCard(props: OgCardProps): OgElement {
               {
                 type: 'div',
                 props: {
-                  style: { display: 'flex', color: PAPER, fontSize: `${fontSize}px`, fontWeight: 600 },
+                  style: { display: 'flex', color: INK, fontSize: `${fontSize}px`, fontWeight: 600 },
                   children: props.titleLine,
                 },
               },
               {
                 type: 'div',
                 props: {
-                  style: { display: 'flex', color: SIGNAL_GREEN, fontSize: `${fontSize}px`, fontWeight: 600 },
+                  style: { display: 'flex', color: MUTED, fontSize: `${fontSize}px`, fontWeight: 600 },
                   children: props.subtitleLine,
                 },
               },
@@ -193,7 +192,7 @@ export function buildOgCard(props: OgCardProps): OgElement {
           props: {
             style: {
               display: 'flex',
-              color: SIGNAL_GREEN,
+              color: MUTED,
               fontFamily: MONO,
               fontSize: '30px',
               fontWeight: 600,
@@ -206,7 +205,7 @@ export function buildOgCard(props: OgCardProps): OgElement {
   }
 }
 
-/** `punctual:` — the wordmark with its colon in signal green (docs/branding/brand.md §1). */
+/** `punctual:` — one neutral wordmark, including the colon. */
 function wordmark(brandName: string): OgElement {
   return {
     type: 'div',
@@ -216,11 +215,11 @@ function wordmark(brandName: string): OgElement {
         fontFamily: MONO,
         fontSize: '28px',
         fontWeight: 600,
-        color: PAPER_MUTED,
+        color: MUTED,
       },
       children: [
         { type: 'span', props: { children: brandName.toLowerCase() } },
-        { type: 'span', props: { style: { color: SIGNAL_GREEN }, children: ':' } },
+        { type: 'span', props: { children: ':' } },
       ],
     },
   }

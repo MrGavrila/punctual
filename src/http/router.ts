@@ -223,7 +223,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
   })
   app.get('/privacy', (c) =>
     c.html(
-      shellHead({
+      (ports.config.publicSiteMode === 'booking-only' ? publicBookingHead : shellHead)({
         title: `Privacy · ${ports.config.brandName}`,
         brandName: ports.config.brandName,
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/privacy`,
@@ -234,7 +234,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
   )
   app.get('/terms', (c) =>
     c.html(
-      shellHead({
+      (ports.config.publicSiteMode === 'booking-only' ? publicBookingHead : shellHead)({
         title: `Terms · ${ports.config.brandName}`,
         brandName: ports.config.brandName,
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/terms`,
@@ -276,6 +276,12 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
 
   app.get('/favicon.svg', (c) =>
     c.body(FAVICON, 200, {
+      'content-type': 'image/svg+xml',
+      'cache-control': 'public, max-age=86400',
+    }),
+  )
+  app.get('/admin-favicon.svg', (c) =>
+    c.body(ADMIN_FAVICON, 200, {
       'content-type': 'image/svg+xml',
       'cache-control': 'public, max-age=86400',
     }),
@@ -395,7 +401,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         // static default card on any failure — see src/http/og/route.ts.
         og: {
           url: `${ports.config.baseUrl.replace(/\/$/, '')}/${userSlug}/${eventSlug}`,
-          image: `${ports.config.baseUrl.replace(/\/$/, '')}/og/${userSlug}/${eventSlug}.png`,
+          image: `${ports.config.baseUrl.replace(/\/$/, '')}/og/${userSlug}/${eventSlug}.png?v=3`,
         },
         // Indexed under the bare URL only. A crawler that arrived through
         // `?date=…&tz=…` (every day link on the calendar) folds back into
@@ -797,9 +803,15 @@ async function bookingPageRateLimited(
   )
 }
 
-/** The colon mark on an ink tile (docs/branding). Inline to avoid an asset fetch. */
-const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-<rect width="32" height="32" rx="7" fill="#0F1512"/>
-<rect x="13" y="9" width="6" height="6" rx="2" fill="#1FC16B"/>
-<rect x="13" y="19" width="6" height="6" rx="2" fill="#1FC16B"/>
+/** The monochrome colon mark on an ink tile. Inline to avoid an asset fetch. */
+const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Punctual">
+<rect width="32" height="32" rx="2" fill="#111111"/>
+<rect x="13" y="9" width="6" height="6" rx="2" fill="#F5F5F5"/>
+<rect x="13" y="19" width="6" height="6" rx="2" fill="#F5F5F5"/>
+</svg>`
+
+/** Neutral shield for authentication and administrative pages. */
+const ADMIN_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Administration">
+<rect width="32" height="32" rx="2" fill="#111111"/>
+<path d="M16 6.5 24 10v6c0 5.1-3.2 8.5-8 10-4.8-1.5-8-4.9-8-10v-6z" fill="none" stroke="#F5F5F5" stroke-width="2.2" stroke-linejoin="round"/>
 </svg>`

@@ -139,7 +139,11 @@ function shellTop(chrome: DashboardChrome, title: string, active: NavKey | null)
     .join('\n      ')
 
   return (
-    shellHead({ title: `${title} · ${chrome.brandName}`, brandName: chrome.brandName }) +
+    shellHead({
+      title: `${title} · ${chrome.brandName}`,
+      brandName: chrome.brandName,
+      faviconHref: '/admin-favicon.svg',
+    }) +
     `<header class="pu-dash-header">
   <a class="pu-mark" href="/dashboard">${escapeHtml(chrome.brandName.toLowerCase())}<span>:</span></a>
   <nav class="pu-nav" aria-label="Dashboard">
@@ -209,7 +213,7 @@ function describedBy(id: string, errors: Record<string, string>): string {
 
 export interface LoginPageData {
   brandName: string
-  /** Optional deployment-specific favicon for the unauthenticated entry page. */
+  /** Optional administrative favicon override. */
   faviconHref?: string
   /** Providers with OAuth credentials configured. Empty is a normal deployment. */
   providers: CalendarProviderName[]
@@ -292,7 +296,7 @@ export function loginPage(d: LoginPageData): string {
     shellHead({
       title: `Sign in · ${d.brandName}`,
       brandName: d.brandName,
-      ...(d.faviconHref ? { faviconHref: d.faviconHref } : {}),
+      faviconHref: d.faviconHref ?? '/admin-favicon.svg',
     }) +
     `<section class="pu-card" style="max-width:26rem;margin:3rem auto">${body}</section>` +
     shellFoot(false)
@@ -2400,8 +2404,8 @@ export function bookingDetailPage(d: BookingDetailPageData): string {
       brandName: d.brandName,
       ...(d.faviconHref ? { faviconHref: d.faviconHref } : {}),
     }) +
-    `<section class="pu-card" aria-label="Your booking">
-  <p><span class="pu-badge"${cancelled ? ' style="background:var(--pu-paper-dim);color:var(--pu-ink-500)"' : ''}>${escapeHtml(statusLabel(d.booking))}</span></p>
+    `<section class="pu-card pu-booking-detail" aria-label="Your booking">
+  <p><span class="pu-badge${cancelled ? '' : ' pu-badge-success'}">${escapeHtml(statusLabel(d.booking))}</span></p>
   <h1>${escapeHtml(title)}</h1>
   <p>with ${escapeHtml(d.host.name || d.host.slug)}</p>
   <p class="pu-time"><strong>${escapeHtml(when)}</strong><br>

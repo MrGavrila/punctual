@@ -75,19 +75,6 @@ export interface BookingEmailContext {
   calendarSyncUncertain?: boolean
 }
 
-// Brand palette. Inline hex rather than tokens: email has no cascade and no
-// custom properties, so every colour has to travel with the element.
-const INK = '#0F1512'
-const MUTED = '#5C6660'
-const PAPER = '#FAFAF7'
-const PAPER_DIM = '#F0F1EC'
-const LINE = '#E3E5DE'
-const MERIDIAN = '#0E7C4C'
-const DANGER = '#D92D20'
-
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif"
-const MONO = "ui-monospace,SFMono-Regular,Menlo,'IBM Plex Mono',monospace"
-
 interface EmailTheme {
   ink: string
   muted: string
@@ -95,45 +82,30 @@ interface EmailTheme {
   paperDim: string
   line: string
   accent: string
-  danger: string
+  neutralAction: string
+  link: string
   font: string
   mono: string
   cardRadius: string
   controlRadius: string
-  wordmarkAccent: boolean
 }
 
-const DEFAULT_EMAIL_THEME: EmailTheme = {
-  ink: INK,
-  muted: MUTED,
-  paper: PAPER,
-  paperDim: PAPER_DIM,
-  line: LINE,
-  accent: MERIDIAN,
-  danger: DANGER,
-  font: FONT,
-  mono: MONO,
-  cardRadius: '16px',
-  controlRadius: '10px',
-  wordmarkAccent: true,
-}
-
-// Booking-only Kisielowa skin, mirroring BOOKING_THEME_CSS. Kept separate
-// from the default shell so account and team-service email retain their
-// existing Punctual presentation.
-const BOOKING_EMAIL_THEME: EmailTheme = {
+// Email has no cascade, so every message uses one explicit deployment-wide
+// theme. Keeping account, team and booking mail on the same palette prevents
+// a recipient from dropping back into Punctual's historical presentation.
+const APPLICATION_EMAIL_THEME: EmailTheme = {
   ink: '#111111',
   muted: '#555555',
   paper: '#F5F5F5',
   paperDim: '#EEEEEE',
   line: '#DDDDDD',
   accent: '#176B55',
-  danger: '#B53845',
+  neutralAction: '#333333',
+  link: '#1155CC',
   font: "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif",
   mono: "'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace",
   cardRadius: '2px',
   controlRadius: '2px',
-  wordmarkAccent: false,
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +186,7 @@ interface DetailRow {
 interface Cta {
   label: string
   url: string
-  /** The single primary action gets the green button; the rest are text links. */
+  /** The single primary action gets a filled button; the rest are text links. */
   primary?: boolean
 }
 
@@ -228,7 +200,8 @@ interface ShellInput {
   ctas: Cta[]
   /** Small print under the divider — timezone caveats, security notes. */
   notes?: string[]
-  accent?: string
+  /** Primary-button fill when the action itself has no booking/status meaning. */
+  actionColor?: string
   theme?: EmailTheme
   /**
    * The host's photo — optional decorative content, unlike the
@@ -249,43 +222,43 @@ function detailRowHtml(row: DetailRow, theme: EmailTheme): string {
     ? `color:${theme.muted};text-decoration:line-through;`
     : `color:${theme.ink};`
   const value = href
-    ? `<a href="${escapeHtml(href)}" style="color:${theme.accent};text-decoration:underline;">${escapeHtml(row.value)}</a>`
+    ? `<a href="${escapeHtml(href)}" style="color:${theme.link};text-decoration:underline;">${escapeHtml(row.value)}</a>`
     : escapeHtml(row.value)
   return (
     `<tr>` +
-    `<td style="padding:6px 16px 6px 0;font-family:${theme.font};font-size:13px;line-height:20px;color:${theme.muted};white-space:nowrap;vertical-align:top;">${escapeHtml(row.label)}</td>` +
-    `<td style="padding:6px 0;font-family:${theme.font};font-size:15px;line-height:22px;${style}vertical-align:top;">${value}</td>` +
+    `<td width="24%" style="width:24%;padding:6px 12px 6px 0;font-family:${theme.font};font-size:13px;line-height:20px;color:${theme.muted};white-space:normal;vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">${escapeHtml(row.label)}</td>` +
+    `<td style="padding:6px 0;font-family:${theme.font};font-size:15px;line-height:22px;${style}vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">${value}</td>` +
     `</tr>`
   )
 }
 
-function ctaHtml(cta: Cta, accent: string, theme: EmailTheme): string {
+function ctaHtml(cta: Cta, color: string, theme: EmailTheme): string {
   const href = safeUrl(cta.url)
   if (!href) return ''
   if (!cta.primary) {
-    return `<a href="${escapeHtml(href)}" style="font-family:${theme.font};font-size:14px;color:${theme.accent};text-decoration:underline;margin-right:20px;">${escapeHtml(cta.label)}</a>`
+    return `<a href="${escapeHtml(href)}" style="font-family:${theme.font};font-size:14px;color:${theme.link};text-decoration:underline;margin-right:20px;">${escapeHtml(cta.label)}</a>`
   }
   // Table-wrapped button: padding on an <a> is unreliable in Outlook, padding
   // on a <td> is not.
   return (
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">` +
-    `<tr><td bgcolor="${accent}" style="border-radius:${theme.controlRadius};">` +
+    `<tr><td bgcolor="${color}" style="border-radius:${theme.controlRadius};">` +
     `<a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 22px;font-family:${theme.font};font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:${theme.controlRadius};">${escapeHtml(cta.label)}</a>` +
     `</td></tr></table>`
   )
 }
 
 function shell(input: ShellInput): string {
-  const theme = input.theme ?? DEFAULT_EMAIL_THEME
-  const accent = input.accent ?? theme.accent
-  const wordmarkColor = theme.wordmarkAccent ? accent : theme.ink
+  const theme = input.theme ?? APPLICATION_EMAIL_THEME
+  const actionColor = input.actionColor ?? theme.neutralAction
+  const wordmarkColor = theme.ink
   const rows = input.rows.map((row) => detailRowHtml(row, theme)).join('')
-  const primary = input.ctas.filter((c) => c.primary).map((c) => ctaHtml(c, accent, theme)).join('')
-  const secondary = input.ctas.filter((c) => !c.primary).map((c) => ctaHtml(c, accent, theme)).join('')
+  const primary = input.ctas.filter((c) => c.primary).map((c) => ctaHtml(c, actionColor, theme)).join('')
+  const secondary = input.ctas.filter((c) => !c.primary).map((c) => ctaHtml(c, theme.link, theme)).join('')
   const notes = (input.notes ?? [])
     .map(
       (n) =>
-        `<p style="margin:0 0 8px 0;font-family:${theme.font};font-size:12px;line-height:18px;color:${theme.muted};">${escapeHtml(n)}</p>`,
+        `<p style="margin:0 0 8px 0;font-family:${theme.font};font-size:12px;line-height:18px;color:${theme.muted};overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">${escapeHtml(n)}</p>`,
     )
     .join('')
 
@@ -312,7 +285,7 @@ function shell(input: ShellInput): string {
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid ${theme.line};border-radius:${theme.cardRadius};">` +
     // Wordmark as text, not an image: images are blocked by default in Outlook
     // and Gmail, and a confirmation must not open on a broken placeholder.
-    `<tr><td style="padding:24px 28px 8px 28px;font-family:${theme.mono};font-size:16px;font-weight:600;letter-spacing:-0.02em;color:${theme.ink};">` +
+    `<tr><td style="padding:24px 28px 8px 28px;font-family:${theme.mono};font-size:16px;font-weight:600;letter-spacing:-0.02em;color:${theme.ink};overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">` +
     `${escapeHtml(input.brandName.toLowerCase())}<span style="color:${wordmarkColor};">:</span>` +
     `</td></tr>` +
     // The host photo, unlike the wordmark above: optional, decorative, an
@@ -325,8 +298,8 @@ function shell(input: ShellInput): string {
         `style="width:40px;height:40px;border-radius:50%;display:block;object-fit:cover;">` +
         `</td></tr>`
       : '') +
-    `<tr><td style="padding:8px 28px 0 28px;font-family:${theme.font};font-size:22px;line-height:30px;font-weight:700;color:${theme.ink};">${escapeHtml(input.heading)}</td></tr>` +
-    `<tr><td style="padding:12px 28px 0 28px;font-family:${theme.font};font-size:15px;line-height:23px;color:${theme.ink};">${escapeHtml(input.intro)}</td></tr>` +
+    `<tr><td style="padding:8px 28px 0 28px;font-family:${theme.font};font-size:22px;line-height:30px;font-weight:700;color:${theme.ink};overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">${escapeHtml(input.heading)}</td></tr>` +
+    `<tr><td style="padding:12px 28px 0 28px;font-family:${theme.font};font-size:15px;line-height:23px;color:${theme.ink};overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">${escapeHtml(input.intro)}</td></tr>` +
     `<tr><td style="padding:20px 28px 0 28px;">` +
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:${theme.paperDim};border-radius:${theme.controlRadius};">` +
     `<tr><td style="padding:16px 18px;">` +
@@ -340,7 +313,7 @@ function shell(input: ShellInput): string {
       ? `<tr><td style="padding:22px 28px 24px 28px;border-top:1px solid ${theme.line};">${notes}</td></tr>`
       : `<tr><td style="padding:24px;"></td></tr>`) +
     `</table>` +
-    `<div style="font-family:${theme.font};font-size:11px;line-height:18px;color:${theme.muted};padding:14px 8px 0 8px;">Sent by ${escapeHtml(input.brandName)}</div>` +
+    `<div style="font-family:${theme.font};font-size:11px;line-height:18px;color:${theme.muted};padding:14px 8px 0 8px;overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;">Sent by ${escapeHtml(input.brandName)}</div>` +
     `</td></tr></table>` +
     `</body></html>`
   )
@@ -465,7 +438,6 @@ export function bookingConfirmationForGuest(ctx: BookingEmailContext): EmailCont
   const tz = zoneFor(ctx, 'guest')
   const brandName = brandOf(ctx)
   const input: ShellInput = {
-    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.eventType.title} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'Your meeting is confirmed',
@@ -495,7 +467,6 @@ export function bookingConfirmationForHost(ctx: BookingEmailContext): EmailConte
   const tz = zoneFor(ctx, 'host')
   const brandName = brandOf(ctx)
   const input: ShellInput = {
-    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.booking.guestName} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'New booking',
@@ -545,7 +516,6 @@ export function bookingRescheduled(ctx: RescheduleEmailContext): EmailContent {
   })
   const who = ctx.audience === 'guest' ? hostNames(ctx) : ctx.booking.guestName
   const input: ShellInput = {
-    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `New time: ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'Your meeting moved',
@@ -607,16 +577,16 @@ export function bookingCancelled(ctx: CancellationEmailContext): EmailContent {
       : `${by} cancelled ${ctx.eventType.title}. It has been removed from the calendar.`
     : `${ctx.eventType.title} has been cancelled and removed from the calendar.`
   const input: ShellInput = {
-    theme: BOOKING_EMAIL_THEME,
     brandName,
-    // Red only here, and only as the accent: cancellation is the one state
-    // where the brand's discipline rule (green means confirmed) must not apply.
-    accent: BOOKING_EMAIL_THEME.danger,
+    // The heading carries the cancelled state. Links and the optional action
+    // keep the shared application palette instead of turning a new booking
+    // action red.
     preheader: `${ctx.eventType.title} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: 'This meeting was cancelled',
     intro,
     rows,
     ctas: ctx.rebookUrl ? [{ label: 'Book a new time', url: ctx.rebookUrl, primary: true }] : [],
+    actionColor: APPLICATION_EMAIL_THEME.accent,
     notes: [tzNote(tz, ctx.booking.startUtc), ...supportNote(ctx)],
   }
   return render(input, `Cancelled: ${ctx.eventType.title} — ${formatWhenShort(ctx.booking.startUtc, tz)}`)
@@ -633,7 +603,6 @@ export function bookingReminder(ctx: ReminderEmailContext): EmailContent {
   const lead = ctx.when === '24h' ? 'tomorrow' : 'in an hour'
   const who = ctx.audience === 'guest' ? hostNames(ctx) : ctx.booking.guestName
   const input: ShellInput = {
-    theme: BOOKING_EMAIL_THEME,
     brandName,
     preheader: `${ctx.eventType.title} ${lead} — ${formatWhenShort(ctx.booking.startUtc, tz)}`,
     heading: ctx.when === '24h' ? 'Your meeting is tomorrow' : 'Your meeting starts in an hour',
@@ -757,7 +726,7 @@ export function hostRemovedFromBookingEmail(input: BookingHostChangeInput): Emai
     heading: `You've been taken off a booking`,
     intro: `${input.editorName} took you off "${input.eventTitle}" with ${input.guestName}. The meeting goes ahead with the hosts below; nothing is expected of you.`,
     rows: bookingHostChangeRows(input),
-    ctas: [{ label: 'Open the booking', url: input.bookingUrl }],
+    ctas: [{ label: 'Open the booking', url: input.bookingUrl, primary: true }],
     notes: [
       'If the meeting is still on your calendar, you can decline or remove it — the booking itself no longer lists you.',
       tzNote(input.hostTz, input.startUtc),
@@ -798,6 +767,7 @@ export function magicLinkEmail(input: MagicLinkInput): EmailContent {
       { label: 'Device', value: (input.userAgent || 'unknown').slice(0, 200) },
     ],
     ctas: [{ label: 'Sign in', url: input.url, primary: true }],
+    actionColor: APPLICATION_EMAIL_THEME.neutralAction,
     notes: [
       'If you did not request this, ignore this email — the link expires on its own and nothing changes until it is used.',
       ...(input.supportEmail ? [`Something looks wrong? Write to ${input.supportEmail}.`] : []),

@@ -45,6 +45,12 @@ function connection(patch: Partial<CalendarConnection> = {}): CalendarConnection
 const listed = [{ id: 'primary', name: 'grace@gmail.example', primary: true }]
 
 describe('dashboard chrome', () => {
+  it('uses the dedicated neutral administrative favicon', () => {
+    const html = apiKeysPage({ ...chrome, keys: [] })
+    expect(html).toContain('<link rel="icon" href="/admin-favicon.svg" type="image/svg+xml">')
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+  })
+
   it('hides API-key controls when both programmatic interfaces are disabled', () => {
     const html = connectionsPage({
       ...chrome,

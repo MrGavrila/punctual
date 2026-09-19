@@ -160,6 +160,7 @@ type Ctx = Context<{ Bindings: Env; Variables: Vars }>
 
 /** Slugs the router needs for itself; an event type may not claim them. */
 const RESERVED_SLUGS = new Set([
+  'admin-favicon.svg',
   'auth',
   'booking',
   'dashboard',
@@ -178,7 +179,7 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
 export function buildDashboardRoutes(
   ports: EnginePorts,
   slots: SlotService,
-  siteFaviconHref?: string,
+  guestFaviconHref?: string,
 ): App {
   const app: App = new Hono<{ Bindings: Env; Variables: Vars }>()
   const brandName = ports.config.brandName
@@ -188,6 +189,8 @@ export function buildDashboardRoutes(
   const apiAccessEnabled = ports.config.restApiEnabled !== false || ports.config.mcpEnabled !== false
   const secureCookies = ports.config.baseUrl.startsWith('https://')
   const hash = (value: string): Promise<string> => ports.crypto.hash(value)
+  const adminHead = (title: string) =>
+    shellHead({ title, brandName, faviconHref: '/admin-favicon.svg' })
 
   // ===========================================================================
   // Session middleware
@@ -250,7 +253,7 @@ export function buildDashboardRoutes(
 
   function csrfRejected(c: Ctx): Response | Promise<Response> {
     return c.html(
-      shellHead({ title: 'Request not accepted', brandName }) +
+      adminHead('Request not accepted') +
         errorPage(
           'Request not accepted',
           'This form was submitted without a valid security token. Reload the page and try again.',
@@ -290,7 +293,6 @@ export function buildDashboardRoutes(
       brandName,
       providers: ports.calendars.available(),
       signupsOpen: policy.mode === 'open',
-      ...(siteFaviconHref ? { faviconHref: siteFaviconHref } : {}),
     }
   }
 
@@ -1340,7 +1342,7 @@ export function buildDashboardRoutes(
     // "every day disabled" would silently blank the whole schedule on save.
     if (weeklyDraft.every((d) => d.ranges.length === 0)) {
       return c.html(
-        shellHead({ title: 'Request not accepted', brandName }) +
+        adminHead('Request not accepted') +
           errorPage('Request not accepted', 'This page was open from before an update. Reload and try again.') +
           shellFoot(false),
         409,
@@ -3126,7 +3128,7 @@ export function buildDashboardRoutes(
         title: 'Your meeting has been rescheduled', badge: 'Rescheduled', tone: 'success',
         messages: ['An updated confirmation email is on its way.'],
         details: guestBookingResultDetails(booking, eventType, host),
-      }, siteFaviconHref))
+      }, guestFaviconHref))
     }
 
     const startRaw = Number(c.req.query('start'))
@@ -3177,7 +3179,7 @@ export function buildDashboardRoutes(
         // Pass the RAW purpose. Collapsing 'manage' to 'reschedule' here is
         // what hid the cancel form from every real guest.
         purpose,
-        ...(siteFaviconHref ? { faviconHref: siteFaviconHref } : {}),
+        ...(guestFaviconHref ? { faviconHref: guestFaviconHref } : {}),
         ...(offered ? { slots: offered } : {}),
         ...(selectedDate ? { selectedDate } : {}),
         ...(Number.isFinite(startParam) ? { newStart: startParam } : {}),
@@ -3211,7 +3213,7 @@ export function buildDashboardRoutes(
     return c.html(guestBookingResultPage(brandName, {
       title: 'Your booking has been cancelled', badge: 'Cancelled', tone: 'neutral',
       details: guestBookingResultDetails(verified.booking, eventType, host),
-    }, siteFaviconHref))
+    }, guestFaviconHref))
   }))
 
   app.post('/booking/:id/reschedule', guestBookingAction(async (c) => {
@@ -3264,7 +3266,7 @@ export function buildDashboardRoutes(
         } : {
           title: 'Your booking was already updated', badge: 'Booking changed', tone: 'error',
           messages: ['Check your latest booking email for the current details.'],
-        }, siteFaviconHref),
+        }, guestFaviconHref),
         409,
       )
     }
@@ -3282,7 +3284,7 @@ export function buildDashboardRoutes(
   function manageActionError(c: Ctx, title: string, message: string, action?: BookingResultData['action']): Response {
     return c.html(guestBookingResultPage(brandName, {
       title, badge: 'Unable to complete', tone: 'error', messages: [message], ...(action ? { action } : {}),
-    }, siteFaviconHref), 400)
+    }, guestFaviconHref), 400)
   }
 
   /** A write can succeed before a later step throws. Never invite a blind POST retry. */
@@ -3298,7 +3300,7 @@ export function buildDashboardRoutes(
             'Your booking may already have been updated.',
             'Check your latest booking email before trying again.',
           ],
-        }, siteFaviconHref), 500)
+        }, guestFaviconHref), 500)
       }
     }
   }
@@ -3357,7 +3359,7 @@ export function buildDashboardRoutes(
   }
 
   function manageError(c: Ctx, _message: string): Response | Promise<Response> {
-    return c.html(manageLinkErrorPage(brandName, siteFaviconHref), 400)
+    return c.html(manageLinkErrorPage(brandName, guestFaviconHref), 400)
   }
 
   // ===========================================================================
@@ -3374,7 +3376,7 @@ export function buildDashboardRoutes(
 
   function notFound(c: Ctx): Response | Promise<Response> {
     return c.html(
-      shellHead({ title: 'Not found', brandName }) +
+      adminHead('Not found') +
         errorPage('Not found', 'That page does not exist, or is not yours.') +
         shellFoot(false),
       404,
@@ -3383,7 +3385,7 @@ export function buildDashboardRoutes(
 
   function oauthError(c: Ctx, message: string): Response | Promise<Response> {
     return c.html(
-      shellHead({ title: 'Sign-in failed', brandName }) + errorPage('Sign-in failed', message) + shellFoot(false),
+      adminHead('Sign-in failed') + errorPage('Sign-in failed', message) + shellFoot(false),
       400,
     )
   }

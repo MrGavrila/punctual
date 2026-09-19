@@ -9,6 +9,8 @@ import {
   escapeHtml,
   formatWhen,
   hostAddedEmail,
+  hostAddedToBookingEmail,
+  hostRemovedFromBookingEmail,
   magicLinkEmail,
   sanitizeHeader,
   type BookingEmailContext,
@@ -95,6 +97,20 @@ function ctx(patch: Partial<BookingEmailContext> = {}): BookingEmailContext {
     supportEmail: 'help@punctual.example',
     ...patch,
   }
+}
+
+const bookingHostChange = {
+  brandName: 'Punctual',
+  hostName: 'Grace Hopper',
+  hostTz: 'America/New_York',
+  eventTitle: 'Intro call',
+  guestName: 'Ada Lovelace',
+  guestEmail: 'ada@example.com',
+  startUtc: START,
+  endUtc: START + 30 * 60_000,
+  hostNames: ['Grace Hopper'],
+  editorName: 'Admin User',
+  bookingUrl: 'https://punctual.example/dashboard/bookings/bk_1',
 }
 
 /** Whatever ICU produces locally — hardcoding "12:00 PM" breaks on ICU drift. */
@@ -209,6 +225,41 @@ describe('email-client safety', () => {
     expect(html).toContain('max-width:600px')
   })
 
+  it('wraps long unbroken copy without splitting ordinary words', () => {
+    const long = 'x'.repeat(500)
+    const mail = bookingCancelled({
+      ...ctx({ brandName: long, booking: booking({ status: 'cancelled' }) }),
+      audience: 'guest',
+      cancelledBy: 'host',
+      cancelledByName: long,
+      reason: long,
+    })
+    const beforeIntro = mail.html.slice(
+      mail.html.lastIndexOf('<td style="', mail.html.indexOf(`${long} cancelled`)),
+      mail.html.indexOf(`${long} cancelled`),
+    )
+    const beforeWordmark = mail.html.slice(
+      mail.html.lastIndexOf('<td style="', mail.html.indexOf(long.toLowerCase())),
+      mail.html.indexOf(long.toLowerCase()),
+    )
+
+    expect(beforeIntro).toContain('overflow-wrap:anywhere')
+    expect(beforeIntro).toContain('word-wrap:break-word')
+    expect(beforeIntro).toContain('word-break:normal')
+    expect(beforeWordmark).toContain('word-break:normal')
+    expect(mail.html).toContain('font-size:12px;line-height:18px;color:#555555;overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;')
+    expect(mail.html).toContain('font-size:11px;line-height:18px;color:#555555;padding:14px 8px 0 8px;overflow-wrap:anywhere;word-wrap:break-word;word-break:normal;')
+    expect(mail.html).not.toContain('word-break:break-all')
+  })
+
+  it('uses flexible detail columns so values retain room on narrow screens', () => {
+    const html = bookingConfirmationForGuest(ctx()).html
+
+    expect(html).toContain('<td width="24%" style="width:24%;padding:6px 12px 6px 0;')
+    expect(html).not.toContain('width="160"')
+    expect(html).not.toContain('max-width:160px')
+  })
+
   it('uses the Kisielowa booking palette and square geometry throughout the booking lifecycle', () => {
     const moved = booking({ startUtc: START + 86_400_000, endUtc: START + 86_400_000 + 30 * 60_000 })
     const cancelled = booking({ status: 'cancelled', cancelledAt: START - 3600_000 })
@@ -240,11 +291,39 @@ describe('email-client safety', () => {
       expect(html).not.toContain('border-radius:10px')
     }
 
-    expect(mails[0]!.html).toContain('bgcolor="#176B55"')
-    expect(mails[3]!.html).toContain('bgcolor="#B53845"')
+    expect(mails[0]!.html).toContain('bgcolor="#333333"')
+    expect(mails[3]!.html).toContain('bgcolor="#176B55"')
   })
 
-  it('keeps non-booking account and team-service mail on the existing Punctual email theme', () => {
+  it('uses neutral management buttons and standard blue links in email', () => {
+    const guest = bookingConfirmationForGuest(ctx())
+    const hostMail = bookingConfirmationForHost(ctx())
+    const moved = bookingRescheduled({
+      ...ctx({ booking: booking({ startUtc: START + 86_400_000, endUtc: START + 86_400_000 + 30 * 60_000 }) }),
+      audience: 'guest',
+      previous: { startUtc: START, endUtc: START + 30 * 60_000 },
+    })
+    const availability = hostAddedEmail({
+      brandName: 'Punctual',
+      hostName: 'Grace Hopper',
+      eventTitle: 'Team intro',
+      teamName: 'Research',
+      schedulingType: 'collective',
+      required: true,
+      scheduleName: null,
+      editorName: 'Ada Lovelace',
+      availabilityUrl: 'https://punctual.example/dashboard/availability',
+    })
+    const added = hostAddedToBookingEmail(bookingHostChange)
+    const removed = hostRemovedFromBookingEmail(bookingHostChange)
+
+    for (const mail of [guest, hostMail, moved, availability, added, removed]) {
+      expect(mail.html).toContain('bgcolor="#333333"')
+    }
+    expect(guest.html).toContain('color:#1155CC;text-decoration:underline;margin-right:20px;">Cancel</a>')
+  })
+
+  it('uses the Kisielowa palette and square geometry for account and team-service mail too', () => {
     const accountMail = magicLinkEmail({
       url: 'https://punctual.example/auth/callback?token=abc123',
       ip: '203.0.113.42',
@@ -264,11 +343,19 @@ describe('email-client safety', () => {
     })
 
     for (const { html } of [accountMail, teamMail]) {
-      expect(html).toContain('#0E7C4C')
-      expect(html).toContain('#FAFAF7')
-      expect(html).toContain('#0F1512')
-      expect(html).toContain('border-radius:16px')
-      expect(html).toContain('border-radius:10px')
+      expect(html).toContain('background-color:#F5F5F5')
+      expect(html).toContain('background-color:#EEEEEE')
+      expect(html).toContain('border:1px solid #DDDDDD')
+      expect(html).toContain('color:#111111')
+      expect(html).toContain('color:#555555')
+      expect(html).toContain('border-radius:2px')
+      expect(html).not.toContain('#FAFAF7')
+      expect(html).not.toContain('border-radius:16px')
+      expect(html).not.toContain('border-radius:10px')
+      expect(html).toContain('overflow-wrap:anywhere')
+      expect(html).toContain('word-wrap:break-word')
+      expect(html).toContain('word-break:normal')
+      expect(html).not.toContain('word-break:break-all')
     }
   })
 
@@ -447,7 +534,8 @@ describe('lifecycle templates', () => {
     expect(mail.text).toContain('Grace Hopper cancelled')
     expect(mail.text).toContain('Travelling')
     expect(mail.text).toContain('https://punctual.example/grace/intro')
-    expect(mail.html).toContain('#B53845')
+    expect(mail.html).toContain('bgcolor="#176B55"')
+    expect(mail.html).not.toContain('bgcolor="#B53845"')
   })
 
   // A note is a message from a person, quoted as one — not a "Reason" row
@@ -517,5 +605,10 @@ describe('magicLinkEmail — ADR-0005 §3', () => {
     expect(mail.text).toContain('15 minutes')
     expect(mail.text).toContain('https://punctual.example/auth/callback?token=abc123')
     expect(mail.html).toContain('https://punctual.example/auth/callback?token=abc123')
+  })
+
+  it('uses a neutral primary action for account sign-in', () => {
+    expect(mail.html).toContain('bgcolor="#333333"')
+    expect(mail.html).not.toContain('bgcolor="#176B55"')
   })
 })

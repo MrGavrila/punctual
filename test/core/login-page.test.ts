@@ -9,6 +9,12 @@ import { describe, expect, it } from 'vitest'
 import { loginPage } from '../../src/http/pages/dashboard.js'
 
 describe('loginPage', () => {
+  it('uses the dedicated administrative favicon by default', () => {
+    const html = loginPage({ brandName: 'Dr. Kisielowa', providers: [] })
+    expect(html).toContain('<link rel="icon" href="/admin-favicon.svg" type="image/svg+xml">')
+    expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+  })
+
   it('carries the deployment brand above the heading without Punctual attribution', () => {
     for (const data of [{ sent: false }, { sent: true }]) {
       const html = loginPage({ brandName: 'Dr. Kisielowa', providers: [], ...data })

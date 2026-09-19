@@ -259,6 +259,29 @@ describe('magic link request (ADR-0005 §3)', () => {
     expect(sent.html).not.toContain('<img')
   })
 
+  it('sends the actual login email through the shared neutral application shell', async () => {
+    const h = harness()
+    await requestMagicLink(h, {
+      email: 'a@example.com',
+      ip: '203.0.113.9',
+      userAgent: 'Test browser',
+      now: NOW,
+    })
+
+    const sent = h.email.sent[0]!
+    expect(sent.subject).toBe(`Sign in to ${h.config.brandName}`)
+    expect(sent.html).toContain('<!doctype html>')
+    expect(sent.html).toContain('background-color:#F5F5F5')
+    expect(sent.html).toContain('border-radius:2px')
+    expect(sent.html).toContain('203.0.113.9')
+    expect(sent.html).toContain('Test browser')
+    expect(sent.html).toContain('15 minutes')
+    expect(sent.html).toContain('bgcolor="#333333"')
+    expect(sent.text).toContain('203.0.113.9')
+    expect(sent.text).toContain('Test browser')
+    expect(sent.text).toMatch(/https:\/\/[^\s]+\/auth\/callback\?token=/)
+  })
+
   it('rejects a malformed address without pretending to have sent anything', async () => {
     const h = harness()
     const res = await requestMagicLink(h, { email: 'not-an-email', ip: '1.1.1.1', userAgent: 'UA', now: NOW })

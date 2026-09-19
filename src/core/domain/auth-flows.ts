@@ -25,6 +25,7 @@ import type {
   Repositories,
   SignupPolicy,
 } from '../../ports.js'
+import { magicLinkEmail } from '../email-templates.js'
 import {
   MAGIC_LINK_TTL_MS,
   MANAGE_TOKEN_TTL_MS,
@@ -154,11 +155,17 @@ export async function requestMagicLink(
   await deps.repos.sessions.createMagicLink(record)
 
   const link = `${trimTrailingSlash(deps.config.baseUrl)}/auth/callback?token=${encodeURIComponent(token)}`
+  const mail = magicLinkEmail({
+    url: link,
+    ip: req.ip || 'an unknown address',
+    userAgent: req.userAgent || 'an unknown browser',
+    expiresMinutes: MAGIC_LINK_TTL_MS / 60_000,
+    brandName: deps.config.brandName,
+    supportEmail: deps.config.supportEmail,
+  })
   await deps.email.send({
     to: email,
-    subject: `Sign in to ${deps.config.brandName}`,
-    text: magicLinkText(deps.config, link, req),
-    html: magicLinkHtml(deps.config, link, req),
+    ...mail,
   })
 
   return { status: 'accepted' }
@@ -596,42 +603,4 @@ async function uniqueSlug(deps: SessionDeps, email: string): Promise<string> {
   }
   // Effectively unreachable, but a login must not fail on a slug collision.
   return `${candidate}-${deps.crypto.randomToken(8).toLowerCase().replace(/[^a-z0-9]/g, '')}`
-}
-
-/**
- * The email states the requesting IP and user agent (ADR-0005 §3) — that is
- * what turns "I did not ask for this" from a suspicion into a report.
- */
-function magicLinkText(config: EngineConfig, link: string, req: MagicLinkRequest): string {
-  return [
-    `Sign in to ${config.brandName}:`,
-    '',
-    link,
-    '',
-    'This link works once and expires in 15 minutes.',
-    '',
-    `Requested from ${req.ip || 'an unknown address'} using ${req.userAgent || 'an unknown browser'}.`,
-    `If that was not you, ignore this email — nothing has changed. Questions: ${config.supportEmail}`,
-  ].join('\n')
-}
-
-function magicLinkHtml(config: EngineConfig, link: string, req: MagicLinkRequest): string {
-  return [
-    `<p>Sign in to ${escapeHtml(config.brandName)}:</p>`,
-    `<p><a href="${escapeHtml(link)}">Sign in</a></p>`,
-    '<p>This link works once and expires in 15 minutes.</p>',
-    `<p>Requested from ${escapeHtml(req.ip || 'an unknown address')} using ${escapeHtml(req.userAgent || 'an unknown browser')}.`,
-    ` If that was not you, ignore this email — nothing has changed.</p>`,
-    `<p>Questions: ${escapeHtml(config.supportEmail)}</p>`,
-  ].join('')
-}
-
-/** The user agent is attacker-controlled and lands in an HTML email. */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }

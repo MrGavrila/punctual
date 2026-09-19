@@ -61,15 +61,31 @@ describe('booking-only public site mode', () => {
     },
   )
 
-  it('uses the Kisielowa favicon on the owner sign-in page', async () => {
+  it('uses the dedicated administrative favicon on the owner sign-in page', async () => {
     const response = await request('/login')
     const html = await response.text()
 
     expect(response.status).toBe(200)
     expect(html).toContain(
-      '<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">',
+      '<link rel="icon" href="/admin-favicon.svg" type="image/svg+xml">',
     )
     expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+    expect(html).not.toContain('https://kisielowa.com/assets/favicon.svg')
+  })
+
+  it('serves neutral product and administrative SVG favicons', async () => {
+    const product = await request('/favicon.svg')
+    const admin = await request('/admin-favicon.svg')
+
+    expect(product.status).toBe(200)
+    expect(admin.status).toBe(200)
+    expect(product.headers.get('content-type')).toBe('image/svg+xml')
+    expect(admin.headers.get('content-type')).toBe('image/svg+xml')
+    expect(await product.text()).not.toContain('#1FC16B')
+    const adminSvg = await admin.text()
+    expect(adminSvg).toContain('aria-label="Administration"')
+    expect(adminSvg).toContain('<path')
+    expect(adminSvg).not.toContain('#1FC16B')
   })
 
   it('keeps owner, guest-support and legal routes available', async () => {
@@ -82,6 +98,21 @@ describe('booking-only public site mode', () => {
     expect(dashboard.status).toBe(302)
     expect(dashboard.headers.get('location')).toContain('/login')
   })
+
+  it.each(['/privacy', '/terms'])(
+    'uses the owner favicon on the public legal page %s',
+    async (path) => {
+      const response = await request(path)
+      const html = await response.text()
+
+      expect(response.status).toBe(200)
+      expect(html).toContain(
+        '<link rel="icon" href="https://kisielowa.com/assets/favicon.svg" type="image/svg+xml">',
+      )
+      expect(html).not.toContain('<link rel="icon" href="/favicon.svg"')
+      expect(html).not.toContain('<link rel="icon" href="/admin-favicon.svg"')
+    },
+  )
 
   it('does not expose Punctual attribution on guest management errors', async () => {
     const response = await request('/booking/not-a-booking?token=invalid')

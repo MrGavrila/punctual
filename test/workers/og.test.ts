@@ -70,7 +70,7 @@ describe('the dynamic OG card', () => {
     // Cached under the documented key/prefix (route.ts, ADR-0006 §1 split) —
     // a second request must not need to re-render.
     // The key is the page plus a hash of the host/avatar list (KV caps keys at 512 bytes).
-    const keys = (await env.CACHE.list({ prefix: 'og:v2:og-host-a:thirty:' })).keys
+    const keys = (await env.CACHE.list({ prefix: 'og:v3:og-host-a:thirty:' })).keys
     expect(keys).toHaveLength(1)
     expect(keys[0]!.name.length).toBeLessThan(200)
   })
@@ -119,11 +119,11 @@ describe('the dynamic OG card', () => {
     const bytes = new Uint8Array(await res.arrayBuffer())
     expect(Array.from(bytes.slice(0, 4))).toEqual(PNG_MAGIC)
     // The key hashes both hosts and Alice's avatar, so a new photo is a new card.
-    const before = (await env.CACHE.list({ prefix: 'og:v2:og-crew:crew:' })).keys.map((k) => k.name)
+    const before = (await env.CACHE.list({ prefix: 'og:v3:og-crew:crew:' })).keys.map((k) => k.name)
     expect(before).toHaveLength(1)
     await env.DB.prepare('UPDATE users SET avatar_key = NULL WHERE id = ?').bind('usr_og_t1').run()
     expect((await getOg('/og/og-crew/crew.png')).status).toBe(200)
-    const after = (await env.CACHE.list({ prefix: 'og:v2:og-crew:crew:' })).keys.map((k) => k.name)
+    const after = (await env.CACHE.list({ prefix: 'og:v3:og-crew:crew:' })).keys.map((k) => k.name)
     expect(after).toHaveLength(2)
     expect(after).toContain(before[0])
   })
@@ -136,7 +136,7 @@ describe('the dynamic OG card', () => {
 
     const res = await getOg('/og/og-host-b/thirty.png')
     expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe('/og/default.png')
+    expect(res.headers.get('location')).toBe('/og/default.png?v=3')
 
     // A failed render must never be cached under the real key — otherwise a
     // later fix to the renderer would stay masked by a stale fallback.
@@ -173,7 +173,7 @@ describe('the dynamic OG card', () => {
     const res = await getOg('/og-host-c/intro')
     expect(res.status).toBe(200)
     const html = await res.text()
-    expect(html).toContain('/og/og-host-c/intro.png')
+    expect(html).toContain('/og/og-host-c/intro.png?v=3')
     expect(html).not.toContain('/og/default.png')
   })
 })

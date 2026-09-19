@@ -82,11 +82,10 @@ export interface PageChrome {
  * Everything before the first data-dependent byte. Flushed immediately.
  */
 export function shellHead(chrome: PageChrome): string {
-  const themeColor = escapeHtml(chrome.themeColor ?? '#0E7C4C')
-  const themeColorMeta = chrome.themeColorDark
-    ? `<meta name="theme-color" content="${themeColor}" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="${escapeHtml(chrome.themeColorDark)}" media="(prefers-color-scheme: dark)">`
-    : `<meta name="theme-color" content="${themeColor}">`
+  const themeColor = escapeHtml(chrome.themeColor ?? '#F5F5F5')
+  const themeColorDark = escapeHtml(chrome.themeColorDark ?? '#111111')
+  const themeColorMeta = `<meta name="theme-color" content="${themeColor}" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="${themeColorDark}" media="(prefers-color-scheme: dark)">`
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -118,12 +117,11 @@ ${chrome.description ? `<meta name="twitter:description" content="${escapeHtml(c
 <meta name="twitter:image" content="${escapeHtml(chrome.og.image)}">`
     : ''
 }
-<!-- Every face the page can use, not just two: with font-display:optional
+<!-- Every face the page uses: with font-display:optional
      the first paint is final, so a face that isn't preloaded is a face the
      visitor likely never sees on a cold cache. Inter carries all body text —
      leaving it out is what made whole pages repaint mid-view. -->
 <link rel="preload" href="/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/schibstedgrotesk-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-700.woff2" as="font" type="font/woff2" crossorigin>
@@ -773,7 +771,7 @@ export function bookingResultCard(opts: BookingResultData): string {
     hour: 'numeric',
     minute: '2-digit',
   }) : ''
-  const badgeClass = opts.tone === 'success' ? '' : opts.tone === 'error' ? ' pu-badge-danger' : ' pu-badge-neutral'
+  const badgeClass = opts.tone === 'success' ? ' pu-badge-success' : opts.tone === 'error' ? ' pu-badge-danger' : ' pu-badge-neutral'
   return `<section class="pu-card pu-confirm" aria-label="${escapeHtml(opts.title)}">
   <svg class="pu-confirm-icon" width="56" height="56" viewBox="0 0 96 96" aria-hidden="true">
     <path class="pu-ring-arc" d="M 69.2 30.8 A 30 30 0 1 1 26.8 30.8"

@@ -77,7 +77,7 @@ export function shell(
 ): string {
   const origin = opts.baseUrl.replace(/\/$/, '')
   const url = `${origin}${opts.path ?? ''}`
-  const image = `${origin}/og/default.png`
+  const image = `${origin}/og/default.png?v=3`
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -86,7 +86,8 @@ export function shell(
 <title>${escapeHtml(opts.title)}</title>
 <meta name="description" content="${escapeHtml(opts.description)}">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#0E7C4C">
+<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="${escapeHtml(url)}">
 ${analyticsTag(opts.analyticsId)}
@@ -110,7 +111,6 @@ ${analyticsTag(opts.analyticsId)}
      font-display:optional the first paint is final, so anything not
      preloaded is likely never seen on a cold cache. -->
 <link rel="preload" href="/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/schibstedgrotesk-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibmplexmono-700.woff2" as="font" type="font/woff2" crossorigin>

@@ -8,7 +8,7 @@
  * fetched async, never blocking first paint, and a returning visitor pays
  * the ~120 KB combined cost once, cached long past any single page's budget.
  *
- * Tokens mirror docs/branding/assets/tokens.css. The three brand faces are
+ * Tokens are documented in docs/semantic-tokens.html. The two web faces are
  * self-hosted OFL files under assets/fonts/ (see FONT_FACES below) — vendored
  * at build time from Google Fonts' own CDN rather than called at runtime, so
  * a visitor's request never leaves punctual's origin.
@@ -42,27 +42,29 @@ export const FONT_FACES = `
 @font-face{font-family:"Inter";font-style:normal;font-weight:400 700;font-display:optional;
   src:url(/fonts/inter-variable.woff2) format("woff2");
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
-@font-face{font-family:"Schibsted Grotesk";font-style:normal;font-weight:600;font-display:optional;
-  src:url(/fonts/schibstedgrotesk-600.woff2) format("woff2");
-  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 `
 
 export const TOKENS = `
 :root{
-  --pu-ink-950:#0F1512; --pu-ink-900:#17201B; --pu-ink-700:#2E3B34;
-  --pu-ink-500:#5C6660; --pu-paper:#FAFAF7; --pu-paper-dim:#F0F1EC;
-  --pu-line:#E3E5DE; --pu-green-700:#0E7C4C; --pu-green-800:#0A5C3A;
-  --pu-signal:#1FC16B; --pu-green-tint:#E4F5EC; --pu-danger:#D92D20;
-  --pu-danger-800:#B8241A; --pu-danger-text:#D92D20; --pu-danger-tint:#FBEAE8;
-  /* A solid green fill behind white/paper text (buttons, the chosen-slot dot,
-     step numbers) needs to stay this dark in EITHER theme — unlike
-     --pu-green-700/800, deliberately NOT redefined under dark mode below.
-     --pu-green-700 brightens in dark mode because it also serves as body
-     text/links there, where it must read against a dark page background;
-     that same brightening drops a filled button's white-on-green contrast
-     to ~2.4:1 (fails WCAG AA) if it shares the token. Same shades as
-     light mode's green-700/800 — those already pass comfortably (5.2:1). */
-  --pu-green-fill:#0E7C4C; --pu-green-fill-hover:#0A5C3A;
+  --pu-ink-950:#111; --pu-ink-900:#222; --pu-ink-700:#333;
+  --pu-ink-500:#555; --pu-paper:#fff; --pu-paper-dim:#eee;
+  --pu-line:#ddd; --pu-green-700:#333; --pu-green-800:#111;
+  --pu-green-tint:#eee; --pu-danger:#B53845;
+  --pu-danger-800:#8E2934; --pu-danger-text:#A8323E; --pu-danger-tint:#FAECEE;
+  /* Primary controls stay graphite. Green is used only for successful
+     booking actions and semantic status, so it remains meaningful. */
+  --pu-green-fill:#333; --pu-green-fill-hover:#111;
+  --pu-success-action:#176B55; --pu-success-action-hover:#0F523F;
+  --pu-success-action-text:#fff; --pu-danger-action-text:#fff;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#628F82; --pu-booking-accent-tint:#E9F4F0;
+  --pu-booking-accent-text:#176B55; --pu-booking-accent-on-fill:#fff;
+  --pu-booking-button-text:#fff;
+  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);
+  --pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
+  --pu-booking-day-selected-bg:var(--pu-booking-accent);
+  --pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
   /* Warn — added for the semantic layer below. Fill/border stays one
      value across themes, same discipline as --pu-green-fill above; a
      separate -text variant is redefined per theme below because #F5A623
@@ -71,18 +73,18 @@ export const TOKENS = `
      darkened amber for readable text while dark mode can stay near the
      brand hue. */
   --pu-warn:#F5A623; --pu-warn-text:#92400E; --pu-warn-tint:#FCEFD9;
-  --pu-font-display:"Schibsted Grotesk",system-ui,-apple-system,sans-serif;
   --pu-font-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --pu-font-display:var(--pu-font-ui);
   --pu-font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --pu-radius:10px; --pu-radius-lg:16px;
-  --pu-shadow-sm:0 1px 2px rgba(15,21,18,.06);
-  --pu-ring:0 0 0 3px color-mix(in srgb,var(--pu-green-700) 25%,transparent);
+  --pu-radius:2px; --pu-radius-lg:2px;
+  --pu-shadow-sm:none;
+  --pu-ring:0 0 0 3px rgba(51,51,51,.22);
   /* Code blocks (docs pages): deliberately NOT redefined under the dark-mode
      media query or [data-theme=dark] below — a code panel that's always a
      dark "terminal" surface reads clearly against either a light or dark
      page background, which is simpler and more reliable than trying to keep
      a code block's syntax contrast correct across two flipped palettes. */
-  --pu-code-bg:#0F1512; --pu-code-fg:#E7F2EA; --pu-code-line:#2E3B34;
+  --pu-code-bg:#111; --pu-code-fg:#f5f5f5; --pu-code-line:#444;
 
   /* ---------------------------------------------------------------------
    * Semantic layer. Product UI states, one level above the raw
@@ -97,60 +99,39 @@ export const TOKENS = `
    * ------------------------------------------------------------------- */
 
   /* Surface: canvas < raised < sunken, by how far off the base page a thing
-     sits. "raised" is the same fill as canvas on light (elevation reads via
-     --pu-shadow-sm/border, exactly how .pu-card already works) but goes
-     lighter than canvas in dark mode below, because a drop shadow barely
-     reads against a near-black page — dark-mode elevation has to come from
-     value contrast instead. "overlay" is new: nothing in the product uses a
+     sits. Raised content is white on the light-grey canvas and slightly
+     lighter than the canvas in dark mode, so elevation reads from value and
+     border contrast without a shadow. "overlay" is new: nothing in the product uses a
      modal/backdrop yet, but a scrim still needs to read as "a wash over
      content" on either theme, so it is a plain ink-tinted rgba() in light
      mode and a plain black rgba() in dark mode below — not composed from
      any other token, since nothing else in the palette is meant to be used
      at partial opacity over arbitrary content. */
-  --pu-surface-canvas:var(--pu-paper);
-  --pu-surface-raised:var(--pu-paper);
-  --pu-surface-sunken:var(--pu-paper-dim);
-  --pu-surface-overlay:rgba(15,21,18,.45);
+  --pu-surface-canvas:#f5f5f5;
+  --pu-surface-raised:#fff;
+  --pu-surface-sunken:#eee;
+  --pu-surface-overlay:rgba(17,17,17,.45);
 
-  /* Text: primary/secondary track --pu-ink-950/--pu-ink-500 verbatim — they
-     already flip for dark mode below the same way. "muted" and "disabled"
-     are new, both ink-500 with alpha baked in (not the bare token plus a
-     sibling opacity rule) so a single custom property is the full color
-     in either theme. "disabled" alpha (.45) matches the treatment
-     .pu-day[aria-disabled] already shipped; "muted" (.72) is one step above
-     it — dim enough to read as decoration, e.g. table timestamps, not body
-     copy — deliberately sub-AA at 3.2:1 (large-text tier only), same trade
-     already accepted for e.g. .pu-cal-head. */
-  --pu-text-primary:var(--pu-ink-950);
-  --pu-text-secondary:var(--pu-ink-500);
-  --pu-text-muted:rgba(92,102,96,.72);
-  --pu-text-on-accent:#FFFFFF;
-  --pu-text-disabled:rgba(92,102,96,.45);
+  /* Text: primary/secondary track the strongest and middle neutral values.
+     Muted and disabled use explicit greys so hierarchy remains predictable:
+     #666/#777 on light surfaces and #aaa/#888 in dark mode. On-accent flips
+     from white to near-black with the action fill below. */
+  --pu-text-primary:#111;
+  --pu-text-secondary:#555;
+  --pu-text-muted:#666;
+  --pu-text-on-accent:#fff;
+  --pu-text-disabled:#777;
 
-  /* Border: subtle = --pu-line's existing job. strong = a border with more
-     presence than a hairline but no status meaning (e.g. a divider that
-     needs to read on its own, not next to a card's shadow) — set to
-     --pu-ink-500 rather than a new hex, so "strong border" and "secondary
-     text" are always the same value by construction. focus reuses
-     --pu-green-700, matching :focus-visible's existing outline color below
-     — a11y focus indication is expected to borrow the accent; that is a
-     different thing from rule 1's "system states don't get the accent",
-     which is about background/fill states like held/booked, not the
-     global focus ring. */
-  --pu-border-subtle:var(--pu-line);
-  --pu-border-strong:var(--pu-ink-500);
-  --pu-border-focus:var(--pu-green-700);
+  /* Border: subtle follows the page divider. Strong stays #888 in both
+     themes for stable field visibility; focus flips from #333 to #f5f5f5 so
+     keyboard focus remains visible without borrowing a status colour. */
+  --pu-border-subtle:#ddd;
+  --pu-border-strong:#888;
+  --pu-border-focus:#333;
 
-  /* Status: independent decisions, not aliases of whatever the marketing
-     palette (docs/branding/assets/tokens.css) happens to alias.
-     - success reuses --pu-green-700, NOT --pu-signal. --pu-signal is a
-       fixed, always-vivid accent meant for a small dot (the wordmark colon,
-       a status pip) and is never contrast-managed for use as text — using
-       it here would mean unreadable status text the day someone sets it as
-       a label color. --pu-green-700 already does the light/dark contrast
-       flip a status text color needs (5.0:1 light, 7.8:1 dark — see
-       styles.ts's own note above on why fills stay pinned but this token
-       doesn't).
+  /* Status: independent decisions, not aliases of the neutral control
+     palette. Success keeps a contrast-managed green because it communicates
+     state.
      - danger/warning follow the same shape: a text-safe color plus a light
        tint for a badge/callout background.
      - info deliberately has NO owned hue. The brand system is one green +
@@ -159,8 +140,8 @@ export const TOKENS = `
        already renders informational asides in neutral ink-on-sunken-surface
        with no color at all; --pu-status-info/-bg codify that as the
        intentional choice rather than leaving it undocumented. */
-  --pu-status-success:var(--pu-green-700);
-  --pu-status-success-bg:var(--pu-green-tint);
+  --pu-status-success:#0E7C4C;
+  --pu-status-success-bg:#E4F5EC;
   --pu-status-danger:var(--pu-danger-text);
   --pu-status-danger-bg:var(--pu-danger-tint);
   --pu-status-warning:var(--pu-warn-text);
@@ -169,14 +150,11 @@ export const TOKENS = `
   --pu-status-info-bg:var(--pu-surface-sunken);
 
   /* Field: a text input's resting border, and the surface of the read-only
-     .pu-url box. In light mode both are the ordinary line and sunken
-     surface. In dark mode the card, the input and the URL box all sat
-     within a few shades of each other, so an editable field and a
-     read-only box were told apart only by the Copy button — the dark
-     override lifts the input's border and drops the URL box below the
-     canvas so each reads as what it is. */
-  --pu-field-border:var(--pu-line);
-  --pu-url-bg:var(--pu-surface-sunken);
+     .pu-url box. Both themes use the stronger neutral border so editable
+     fields remain visible without borrowing a semantic state colour. The
+     read-only URL box keeps the sunken surface treatment. */
+  --pu-field-border:var(--pu-border-strong);
+  --pu-url-bg:#eee;
 
   /* Slot: the booking flow's own state machine (see src/core/slot-state.ts).
      Rule: held/booked are visually distinct from available
@@ -190,51 +168,91 @@ export const TOKENS = `
      from booked and each other structurally (see .pu-slot-past/
      .pu-slot-outside-notice border-style/opacity in BASE_CSS below), not
      just by color, so the distinction survives greyscale. */
-  --pu-slot-available-bg:var(--pu-surface-raised);
-  --pu-slot-available-border:var(--pu-border-subtle);
-  --pu-slot-available-text:var(--pu-text-primary);
-  --pu-slot-hover-bg:var(--pu-green-tint);
-  --pu-slot-hover-border:var(--pu-green-700);
-  --pu-slot-hover-text:var(--pu-text-primary);
-  --pu-slot-selected-bg:var(--pu-green-tint);
-  --pu-slot-selected-border:var(--pu-green-700);
-  --pu-slot-selected-text:var(--pu-text-primary);
+  --pu-slot-available-bg:#fff;
+  --pu-slot-available-border:var(--pu-booking-accent-border);
+  --pu-slot-available-text:#111;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint);
+  --pu-slot-hover-border:var(--pu-booking-accent);
+  --pu-slot-hover-text:#111;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint);
+  --pu-slot-selected-border:var(--pu-booking-accent);
+  --pu-slot-selected-text:#111;
   --pu-slot-held-bg:var(--pu-warn-tint);
   --pu-slot-held-border:var(--pu-warn);
   --pu-slot-held-text:var(--pu-warn-text);
-  --pu-slot-booked-bg:var(--pu-surface-sunken);
-  --pu-slot-booked-border:var(--pu-border-subtle);
-  --pu-slot-booked-text:var(--pu-text-disabled);
-  --pu-slot-past-bg:var(--pu-surface-canvas);
+  --pu-slot-booked-bg:#eee;
+  --pu-slot-booked-border:#ddd;
+  --pu-slot-booked-text:#777;
+  --pu-slot-past-bg:#f5f5f5;
   --pu-slot-past-border:transparent;
-  --pu-slot-past-text:var(--pu-text-muted);
-  --pu-slot-outside-notice-bg:var(--pu-surface-raised);
-  --pu-slot-outside-notice-border:var(--pu-border-subtle);
-  --pu-slot-outside-notice-text:var(--pu-text-muted);
+  --pu-slot-past-text:#666;
+  --pu-slot-outside-notice-bg:#fff;
+  --pu-slot-outside-notice-border:#ddd;
+  --pu-slot-outside-notice-text:#666;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme=light]){
-    --pu-paper:#0F1512; --pu-paper-dim:#17201B; --pu-line:#2E3B34;
-    --pu-ink-950:#FAFAF7; --pu-ink-500:#9AA5A0; --pu-green-700:#1FC16B;
-    --pu-green-800:#3ED486; --pu-green-tint:#153A28; --pu-danger-text:#FF6B5B;
-    --pu-danger-tint:#3A1A16; --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
-    --pu-shadow-sm:0 1px 2px rgba(0,0,0,.4);
-    --pu-surface-raised:#17201B;
-    --pu-text-muted:rgba(154,165,160,.72); --pu-text-disabled:rgba(154,165,160,.45);
+    --pu-paper:#111; --pu-paper-dim:#2a2a2a; --pu-line:#444;
+    --pu-ink-950:#f5f5f5; --pu-ink-900:#eee; --pu-ink-700:#ddd; --pu-ink-500:#bbb;
+    --pu-green-700:#f5f5f5; --pu-green-800:#fff; --pu-green-tint:#2a2a2a;
+    --pu-green-fill:#f5f5f5; --pu-green-fill-hover:#d8d8d8;
+    --pu-success-action:#77BFA6; --pu-success-action-hover:#8BD0B7;
+    --pu-success-action-text:#111;
+    --pu-booking-accent:var(--pu-success-action);
+    --pu-booking-accent-hover:var(--pu-success-action-hover);
+    --pu-booking-accent-border:#4B806E; --pu-booking-accent-tint:#183129;
+    --pu-booking-accent-text:#77BFA6; --pu-booking-accent-on-fill:#111;
+    --pu-danger:#E06C78; --pu-danger-800:#F0808A;
+    --pu-danger-text:#FF8A94; --pu-danger-tint:#3A2025;
+    --pu-danger-action-text:#111;
+    --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
+    --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+    --pu-surface-canvas:#111; --pu-surface-raised:#1c1c1c; --pu-surface-sunken:#2a2a2a;
+    --pu-text-primary:#f5f5f5; --pu-text-secondary:#bbb; --pu-text-on-accent:#111;
+    --pu-text-muted:#aaa; --pu-text-disabled:#888;
+    --pu-border-subtle:#444; --pu-border-strong:#888; --pu-border-focus:#f5f5f5;
     --pu-surface-overlay:rgba(0,0,0,.6);
-    --pu-field-border:#3C4A42; --pu-url-bg:#0B100D;
+    --pu-field-border:var(--pu-border-strong); --pu-url-bg:#2a2a2a;
+    --pu-slot-available-bg:#1c1c1c; --pu-slot-available-border:var(--pu-booking-accent-border); --pu-slot-available-text:#f5f5f5;
+    --pu-slot-hover-bg:var(--pu-booking-accent-tint); --pu-slot-hover-border:var(--pu-booking-accent); --pu-slot-hover-text:#f5f5f5;
+    --pu-slot-selected-bg:var(--pu-booking-accent-tint); --pu-slot-selected-border:var(--pu-booking-accent); --pu-slot-selected-text:#f5f5f5;
+    --pu-slot-booked-bg:#2a2a2a; --pu-slot-booked-border:#444; --pu-slot-booked-text:#888;
+    --pu-slot-past-bg:#111; --pu-slot-past-text:#aaa;
+    --pu-slot-outside-notice-bg:#1c1c1c; --pu-slot-outside-notice-border:#444; --pu-slot-outside-notice-text:#aaa;
+    --pu-status-success:#1FC16B; --pu-status-success-bg:#153A28;
+    --pu-booking-button-text:#111;
   }
 }
 :root[data-theme=dark]{
-  --pu-paper:#0F1512; --pu-paper-dim:#17201B; --pu-line:#2E3B34;
-  --pu-ink-950:#FAFAF7; --pu-ink-500:#9AA5A0; --pu-green-700:#1FC16B;
-  --pu-green-800:#3ED486; --pu-green-tint:#153A28; --pu-danger-text:#FF6B5B;
-  --pu-danger-tint:#3A1A16; --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
-  --pu-shadow-sm:0 1px 2px rgba(0,0,0,.4);
-  --pu-surface-raised:#17201B;
-  --pu-text-muted:rgba(154,165,160,.72); --pu-text-disabled:rgba(154,165,160,.45);
+  --pu-paper:#111; --pu-paper-dim:#2a2a2a; --pu-line:#444;
+  --pu-ink-950:#f5f5f5; --pu-ink-900:#eee; --pu-ink-700:#ddd; --pu-ink-500:#bbb;
+  --pu-green-700:#f5f5f5; --pu-green-800:#fff; --pu-green-tint:#2a2a2a;
+  --pu-green-fill:#f5f5f5; --pu-green-fill-hover:#d8d8d8;
+  --pu-success-action:#77BFA6; --pu-success-action-hover:#8BD0B7;
+  --pu-success-action-text:#111;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#4B806E; --pu-booking-accent-tint:#183129;
+  --pu-booking-accent-text:#77BFA6; --pu-booking-accent-on-fill:#111;
+  --pu-danger:#E06C78; --pu-danger-800:#F0808A;
+  --pu-danger-text:#FF8A94; --pu-danger-tint:#3A2025;
+  --pu-danger-action-text:#111;
+  --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
+  --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+  --pu-surface-canvas:#111; --pu-surface-raised:#1c1c1c; --pu-surface-sunken:#2a2a2a;
+  --pu-text-primary:#f5f5f5; --pu-text-secondary:#bbb; --pu-text-on-accent:#111;
+  --pu-text-muted:#aaa; --pu-text-disabled:#888;
+  --pu-border-subtle:#444; --pu-border-strong:#888; --pu-border-focus:#f5f5f5;
   --pu-surface-overlay:rgba(0,0,0,.6);
-  --pu-field-border:#3C4A42; --pu-url-bg:#0B100D;
+  --pu-field-border:var(--pu-border-strong); --pu-url-bg:#2a2a2a;
+  --pu-slot-available-bg:#1c1c1c; --pu-slot-available-border:var(--pu-booking-accent-border); --pu-slot-available-text:#f5f5f5;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint); --pu-slot-hover-border:var(--pu-booking-accent); --pu-slot-hover-text:#f5f5f5;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint); --pu-slot-selected-border:var(--pu-booking-accent); --pu-slot-selected-text:#f5f5f5;
+  --pu-slot-booked-bg:#2a2a2a; --pu-slot-booked-border:#444; --pu-slot-booked-text:#888;
+  --pu-slot-past-bg:#111; --pu-slot-past-text:#aaa;
+  --pu-slot-outside-notice-bg:#1c1c1c; --pu-slot-outside-notice-border:#444; --pu-slot-outside-notice-text:#aaa;
+  --pu-status-success:#1FC16B; --pu-status-success-bg:#153A28;
+  --pu-booking-button-text:#111;
 }
 `
 
@@ -254,8 +272,8 @@ export const TOKENS = `
  *   no per-field error class needed from the route.
  * - .pu-confirm-icon is the brand mark verbatim (the "dot at twelve" ring
  *   from docs' mark.svg: bold arc open at twelve, the dot landed in the
- *   gap = arrived on time). Same geometry, not a redraw — the ring is
- *   currentColor so it flips with the theme; only the dot is green.
+ *   gap = arrived on time). Same geometry, not a redraw — both the ring and
+ *   dot use currentColor so the mark flips with the theme as one unit.
  */
 export const BASE_CSS = `
 *,*::before,*::after{box-sizing:border-box}
@@ -270,7 +288,8 @@ time,.pu-time{font-family:var(--pu-font-mono);font-variant-numeric:tabular-nums}
 
 .pu-wrap{max-width:900px;margin:0 auto;padding:1.5rem 1rem 4rem}
 .pu-card{background:var(--pu-surface-raised);border:1px solid var(--pu-border-subtle);
-  border-radius:var(--pu-radius-lg);padding:1.375rem;box-shadow:var(--pu-shadow-sm)}
+  border-radius:var(--pu-radius-lg);padding:1.375rem;box-shadow:var(--pu-shadow-sm);
+  overflow-wrap:anywhere;word-break:break-word}
 .pu-muted{color:var(--pu-text-secondary)}
 /* Host identity block atop a booking page — a person, not a label, so the
    name is set in the display face at text size (never uppercase/tracked:
@@ -278,9 +297,11 @@ time,.pu-time{font-family:var(--pu-font-mono);font-variant-numeric:tabular-nums}
    its own muted line rather than a comma splice, so the two facts read at
    different weights the way they matter differently. */
 .pu-host{display:flex;align-items:center;gap:.875rem;margin:0 0 1.25rem}
+.pu-host>div{min-width:0}
 .pu-host-name{margin:0;font-family:var(--pu-font-display);font-size:1.0625rem;
-  font-weight:600;line-height:1.3;color:var(--pu-text-primary)}
-.pu-host-org{margin:.1rem 0 0;font-size:.875rem;line-height:1.35;color:var(--pu-text-secondary)}
+  font-weight:600;line-height:1.3;color:var(--pu-text-primary);overflow-wrap:anywhere;word-break:break-word}
+.pu-host-org{margin:.1rem 0 0;font-size:.875rem;line-height:1.35;color:var(--pu-text-secondary);
+  overflow-wrap:anywhere;word-break:break-word}
 .pu-host-link{color:var(--pu-green-700);text-decoration:none}
 .pu-host-link:hover{text-decoration:underline}
 .pu-hosts{display:flex;align-items:center;gap:.75rem;margin:0 0 1.25rem}
@@ -288,7 +309,8 @@ time,.pu-time{font-family:var(--pu-font-mono);font-variant-numeric:tabular-nums}
 .pu-hosts-stack>*{margin-left:-8px;box-shadow:0 0 0 2px var(--pu-paper);border-radius:50%}
 .pu-hosts-stack>:first-child{margin-left:0}
 .pu-hosts-count{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--pu-paper-dim);color:var(--pu-ink-500);font-family:var(--pu-font-mono);font-size:.75rem}
-.pu-hosts-text{margin:0;font-size:.9375rem;line-height:1.4;color:var(--pu-text-secondary)}
+.pu-hosts-text{min-width:0;margin:0;font-size:.9375rem;line-height:1.4;color:var(--pu-text-secondary);
+  overflow-wrap:anywhere;word-break:break-word}
 .pu-hosts-text strong{color:var(--pu-ink-950);font-weight:600}
 .pu-hosts-team{color:var(--pu-text-secondary);font-weight:400}
 .pu-hosts-more{display:inline}
@@ -297,13 +319,14 @@ time,.pu-time{font-family:var(--pu-font-mono);font-variant-numeric:tabular-nums}
 .pu-hosts-more[open] summary{display:none}
 .pu-mark{font-family:var(--pu-font-mono);font-weight:600;letter-spacing:-.02em;
   text-decoration:none;color:var(--pu-text-primary)}
-.pu-mark span{color:var(--pu-signal)}
+.pu-mark span{color:inherit}
 
 .pu-grid{display:grid;gap:1.5rem;grid-template-columns:1fr}
 @media(min-width:780px){.pu-grid{grid-template-columns:300px 1fr}}
 
 .pu-event-header{padding:0 0 1.5rem;margin:0 0 1.5rem;border-bottom:1px solid var(--pu-line)}
 .pu-event-header h1{font-size:1.75rem;margin:0 0 .5rem}
+.pu-event-header h1,.pu-event-header>p{overflow-wrap:anywhere;word-break:break-word}
 .pu-event-header .pu-meta{margin-top:.85rem}
 
 .pu-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
@@ -406,9 +429,10 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
 .pu-callout{background:var(--pu-status-danger-bg);border:1px solid var(--pu-danger);
   border-radius:var(--pu-radius);padding:.75rem 1rem;font-size:.875rem;color:var(--pu-text-primary)}
 .pu-badge{display:inline-block;padding:.15rem .5rem;border-radius:99px;font-size:.75rem;
-  background:var(--pu-status-success-bg);color:var(--pu-status-success);font-weight:600}
+  background:var(--pu-surface-sunken);color:var(--pu-text-secondary);font-weight:600}
+.pu-badge-success{background:var(--pu-status-success-bg);color:var(--pu-status-success)}
 .pu-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:99px;
-  background:var(--pu-signal);vertical-align:middle}
+  background:currentColor;vertical-align:middle}
 /* align-items:center, not the default stretch: the timezone control is a
    bordered box taller than the text items, and without centering every
    plain-text item top-aligns against it — the whole line reads crooked. */
@@ -455,14 +479,14 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
 .pu-confirm{text-align:center;padding:2rem 1.5rem}
 .pu-confirm-icon{display:block;margin:0 auto .75rem;color:var(--pu-text-primary)}
 .pu-ring-arc{stroke:currentColor}
-.pu-ring-dot{fill:var(--pu-signal)}
+.pu-ring-dot{fill:currentColor}
 .pu-confirm h1{margin:.15rem 0 .35rem}
 .pu-confirm-details{text-align:left;list-style:none;margin:1.25rem 0;padding:1rem 1.25rem;
   background:var(--pu-surface-sunken);border-radius:var(--pu-radius);display:grid;gap:.6rem}
 .pu-confirm-details div{display:flex;justify-content:space-between;align-items:baseline;
   gap:1rem;flex-wrap:wrap}
 .pu-confirm-details dt{color:var(--pu-text-secondary);font-size:.8125rem;font-weight:600;margin:0}
-.pu-confirm-details dd{margin:0;text-align:right}
+.pu-confirm-details dd{margin:0;min-width:0;text-align:right;overflow-wrap:anywhere;word-break:break-word}
 .pu-result-copy{display:grid;gap:.25rem;margin:1.25rem 0 0}
 .pu-result-copy p{margin:0}
 
@@ -586,8 +610,7 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
 .pu-docs-table-wrap{overflow-x:auto}
 .pu-dash-table{width:100%;min-width:34rem}
 .pu-badge{white-space:nowrap}
-/* Provenance, not success: a creator badge must not read like the green
-   "Default" state. */
+/* Provenance and other classification labels use the neutral badge. */
 .pu-badge-neutral{background:var(--pu-paper-dim);color:var(--pu-ink-500)}
 .pu-card-title{display:flex;flex-wrap:wrap;gap:.4rem;align-items:baseline}
 .pu-card-title h2{margin:0}
@@ -613,7 +636,7 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
   .pu-day-ranges{flex:1 1 auto;margin:0}
 }
 .pu-tz-input{padding-right:2.25rem;background-repeat:no-repeat;background-position:right .8rem center;
-  background-size:.7rem;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%235C6660' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+  background-size:.7rem;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%23777777' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
 .pu-overrides{font-family:var(--pu-font-mono);font-size:.875rem}
 /* event-type form and cards */
 /* Home list: a card is scanned, not read, so it is three short rows —
@@ -685,6 +708,7 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
    because the tokens carry one; the old inline colour did not. */
 .pu-badge-dot::before{content:"";display:inline-block;width:.45rem;height:.45rem;margin:0 .35rem .1rem 0;
   border-radius:99px;background:currentColor;vertical-align:middle}
+.pu-badge-dot{background:var(--pu-status-success-bg);color:var(--pu-status-success)}
 .pu-badge-danger{background:var(--pu-status-danger-bg);color:var(--pu-status-danger)}
 .pu-badge-danger::before{background:none;border:1.5px solid currentColor;box-sizing:border-box}
 /* A destructive action that is not the card's purpose: text in the danger
@@ -704,10 +728,8 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
   word-break:break-all;white-space:pre-wrap;user-select:all;-webkit-user-select:all}
 
 /* first-run, settings, admin */
-/* The empty-home checklist. Each step's mark is the slot vocabulary in
-   miniature: an open ring while the step is still to do, the filled green
-   dot once it is done — the same two states a guest sees on the booking
-   page, so the dashboard and the product share one language. */
+/* The empty-home checklist. Each step uses an open ring while it is still to
+   do and a filled mark once complete, so progress survives greyscale. */
 .pu-setup-steps{list-style:none;margin:1rem 0 1.25rem;padding:0;display:grid;gap:.85rem}
 .pu-setup-step{display:flex;align-items:flex-start;gap:.75rem}
 .pu-setup-step a{font-weight:600;color:var(--pu-text-primary);text-decoration:none}
@@ -805,53 +827,21 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
 `
 
 /**
- * Deployment-wide Kisielowa skin. The booking-only deployment keeps the
- * booking journey, owner dashboard, authentication, legal and error pages;
- * one shared override gives every retained page the same neutral palette and
- * square geometry. Semantic success/danger/warning colours remain status
- * signals rather than decoration.
+ * Deployment-wide Kisielowa component treatment. TOKENS owns the shared
+ * neutral palette and square geometry; this block only defines interaction
+ * behaviour shared by the booking journey, owner dashboard, authentication,
+ * legal and error pages. Semantic success/danger/warning colours remain
+ * status signals rather than decoration.
  */
 export const BOOKING_THEME_CSS = `
-body{
-  --pu-paper:#fff;--pu-paper-dim:#eee;--pu-line:#ddd;
-  --pu-ink-950:#111;--pu-ink-900:#222;--pu-ink-700:#333;--pu-ink-500:#555;
-  --pu-green-700:#333;--pu-green-800:#111;--pu-green-tint:#eee;
-  --pu-green-fill:#333;--pu-green-fill-hover:#111;
-  --pu-success-action:#176B55;--pu-success-action-hover:#0F523F;
-  --pu-success-action-text:#fff;
-  --pu-booking-accent:var(--pu-success-action);
-  --pu-booking-accent-hover:var(--pu-success-action-hover);
-  --pu-booking-accent-border:#628F82;
-  --pu-booking-accent-tint:#E9F4F0;
-  --pu-booking-accent-text:#176B55;--pu-booking-accent-on-fill:#fff;
-  --pu-danger:#B53845;--pu-danger-800:#8E2934;
-  --pu-danger-text:#A8323E;--pu-danger-tint:#FAECEE;
-  --pu-danger-action-text:#fff;
-  --pu-radius:2px;--pu-radius-lg:2px;--pu-shadow-sm:none;
-  --pu-ring:0 0 0 3px rgba(51,51,51,.22);
-  --pu-surface-canvas:#f5f5f5;--pu-surface-raised:#fff;--pu-surface-sunken:#eee;
-  --pu-text-primary:#111;--pu-text-secondary:#555;--pu-text-muted:#666;--pu-text-disabled:#777;
-  --pu-border-subtle:#ddd;--pu-border-strong:#888;--pu-border-focus:#333;
-  --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#eee;
-  --pu-slot-available-bg:#fff;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#111;
-  --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#111;
-  --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#111;
-  --pu-slot-booked-bg:#eee;--pu-slot-booked-border:#ddd;--pu-slot-booked-text:#777;
-  --pu-slot-past-bg:#f5f5f5;--pu-slot-past-text:#666;
-  --pu-slot-outside-notice-bg:#fff;--pu-slot-outside-notice-border:#ddd;
-  --pu-slot-outside-notice-text:#666;
-  --pu-status-success:#0E7C4C;--pu-status-success-bg:#E4F5EC;
-  --pu-booking-button-text:#fff;
-  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
-  --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
-}
-
 body h1,
 body h2,
 body h3,
 body .pu-host-name{font-family:var(--pu-font-ui)}
 body .pu-card{box-shadow:none}
-body .pu-meta .pu-dot{background:var(--pu-booking-accent)}
+body .pu-meta .pu-dot{background:currentColor}
+body .pu-booking-detail h1,
+body .pu-booking-detail p{overflow-wrap:anywhere;word-break:break-word}
 body .pu-day[data-has-slots="1"]{
   background:var(--pu-booking-accent-tint);color:var(--pu-booking-accent-text)}
 body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger){
@@ -905,73 +895,6 @@ body input:focus-visible,
 body select:focus-visible,
 body textarea:focus-visible{
   outline:3px solid var(--pu-border-focus);outline-offset:2px}
-
-:root[data-theme="dark"] body{
-  --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
-  --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
-  --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
-  --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
-  --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
-  --pu-success-action-text:#111;
-  --pu-booking-accent:var(--pu-success-action);
-  --pu-booking-accent-hover:var(--pu-success-action-hover);
-  --pu-booking-accent-border:#4B806E;
-  --pu-booking-accent-tint:#183129;
-  --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
-  --pu-danger:#E06C78;--pu-danger-800:#F0808A;
-  --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
-  --pu-danger-action-text:#111;
-  --pu-ring:0 0 0 3px rgba(245,245,245,.24);
-  --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
-  --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
-  --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
-  --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
-  --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#f5f5f5;
-  --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
-  --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
-  --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
-  --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
-  --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
-  --pu-slot-outside-notice-text:#aaa;
-  --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
-  --pu-booking-button-text:#111;
-  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
-  --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
-}
-@media(prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) body{
-    --pu-paper:#111;--pu-paper-dim:#2a2a2a;--pu-line:#444;
-    --pu-ink-950:#f5f5f5;--pu-ink-900:#eee;--pu-ink-700:#ddd;--pu-ink-500:#bbb;
-    --pu-green-700:#f5f5f5;--pu-green-800:#fff;--pu-green-tint:#2a2a2a;
-    --pu-green-fill:#f5f5f5;--pu-green-fill-hover:#d8d8d8;
-    --pu-success-action:#77BFA6;--pu-success-action-hover:#8BD0B7;
-    --pu-success-action-text:#111;
-    --pu-booking-accent:var(--pu-success-action);
-    --pu-booking-accent-hover:var(--pu-success-action-hover);
-    --pu-booking-accent-border:#4B806E;
-    --pu-booking-accent-tint:#183129;
-    --pu-booking-accent-text:#77BFA6;--pu-booking-accent-on-fill:#111;
-    --pu-danger:#E06C78;--pu-danger-800:#F0808A;
-    --pu-danger-text:#FF8A94;--pu-danger-tint:#3A2025;
-    --pu-danger-action-text:#111;
-    --pu-ring:0 0 0 3px rgba(245,245,245,.24);
-    --pu-surface-canvas:#111;--pu-surface-raised:#1c1c1c;--pu-surface-sunken:#2a2a2a;
-    --pu-text-primary:#f5f5f5;--pu-text-secondary:#bbb;--pu-text-muted:#aaa;--pu-text-disabled:#888;
-    --pu-border-subtle:#444;--pu-border-strong:#888;--pu-border-focus:#f5f5f5;
-    --pu-field-border:var(--pu-border-subtle);--pu-url-bg:#2a2a2a;
-    --pu-slot-available-bg:#1c1c1c;--pu-slot-available-border:var(--pu-booking-accent-border);--pu-slot-available-text:#f5f5f5;
-    --pu-slot-hover-bg:var(--pu-booking-accent-tint);--pu-slot-hover-border:var(--pu-booking-accent);--pu-slot-hover-text:#f5f5f5;
-    --pu-slot-selected-bg:var(--pu-booking-accent-tint);--pu-slot-selected-border:var(--pu-booking-accent);--pu-slot-selected-text:#f5f5f5;
-    --pu-slot-booked-bg:#2a2a2a;--pu-slot-booked-border:#444;--pu-slot-booked-text:#888;
-    --pu-slot-past-bg:#111;--pu-slot-past-text:#aaa;
-    --pu-slot-outside-notice-bg:#1c1c1c;--pu-slot-outside-notice-border:#444;
-    --pu-slot-outside-notice-text:#aaa;
-    --pu-status-success:#1FC16B;--pu-status-success-bg:#153A28;
-    --pu-booking-button-text:#111;
-    --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);--pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
-    --pu-booking-day-selected-bg:var(--pu-booking-accent);--pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
-  }
-}
 
 @media(hover:hover) and (pointer:fine){
   body .pu-btn:not(.pu-btn-success):not(.pu-btn-danger):not(.pu-btn-ghost):not(.pu-btn-ghost-danger):hover{
@@ -1042,7 +965,7 @@ export const LANDING_CSS = `
 
 .pu-live-demo{margin-top:2.5rem}
 .pu-embed-frame{max-width:560px;margin:0 auto;padding:.75rem}
-.pu-embed-frame iframe{border-radius:calc(var(--pu-radius-lg) - .5rem)}
+.pu-embed-frame iframe{border-radius:var(--pu-radius)}
 
 .pu-feature-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .pu-feature-grid .pu-stat{display:block;font-family:var(--pu-font-mono);font-weight:700;
@@ -1052,7 +975,7 @@ export const LANDING_CSS = `
   list-style:none;padding:0;margin:0;counter-reset:pu-step}
 .pu-steps li{counter-increment:pu-step;padding-top:2.75rem;position:relative}
 .pu-steps li::before{content:counter(pu-step);position:absolute;top:0;left:0;
-  width:2rem;height:2rem;border-radius:99px;background:var(--pu-green-fill);color:#fff;
+  width:2rem;height:2rem;border-radius:99px;background:var(--pu-green-fill);color:var(--pu-text-on-accent);
   display:flex;align-items:center;justify-content:center;font-family:var(--pu-font-mono);
   font-weight:700;font-size:.875rem}
 
@@ -1116,7 +1039,7 @@ export const LANDING_CSS = `
 .pu-docs-content ul,.pu-docs-content ol{padding-left:1.25rem;margin:0 0 1rem}
 .pu-docs-content li{margin-bottom:.4rem}
 .pu-docs-content code{font-family:var(--pu-font-mono);font-size:.875em;background:var(--pu-paper-dim);
-  border:1px solid var(--pu-line);border-radius:4px;padding:.05rem .35rem}
+  border:1px solid var(--pu-line);border-radius:var(--pu-radius);padding:.05rem .35rem}
 
 /* Code blocks: an always-dark terminal surface (see --pu-code-* in TOKENS'
    :root, deliberately not redefined for dark mode) so a multi-line snippet

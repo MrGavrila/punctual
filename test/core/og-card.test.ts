@@ -47,6 +47,26 @@ describe('buildOgCard', () => {
     // Lowercased, colon-mark wordmark (docs/branding/brand.md §1) — never the title-cased brand name.
     expect(serialised).toContain('punctual')
     expect(serialised).not.toContain('Punctual')
+    expect(serialised).toContain('"backgroundColor":"#F5F5F5"')
+    expect(serialised).toContain('"color":"#111111"')
+    expect(serialised).toContain('"color":"#555555"')
+    expect(serialised).not.toContain('#176B55')
+    expect(serialised).not.toContain('#FAFAF7')
+    expect(serialised).not.toContain('#0F1512')
+  })
+
+  it('keeps a natural logo rectangular without restoring the old rounded-card geometry', () => {
+    const tree = JSON.stringify(
+      buildOgCard({
+        titleLine: 'Book 30 min',
+        subtitleLine: 'with the OG Crew team',
+        timeLabel: '10:30 GMT+3',
+        brandName: 'Punctual',
+        avatars: [{ src: 'data:image/png;base64,AAAA', initial: 'O', aspect: 2 }],
+      }),
+    )
+    expect(tree).toContain('"borderRadius":"2px"')
+    expect(tree).not.toContain('"borderRadius":"16px"')
   })
 })
 
@@ -76,6 +96,7 @@ describe('buildOgCard with faces', () => {
     expect(tree).toContain('"children":"C"')
     expect(tree).toContain('"children":"+2"')
     expect(tree).toContain('"width":"132px"')
+    expect(tree).not.toContain('#176B55')
   })
 
   it('no avatars: the text-only card, unchanged', () => {

@@ -7,46 +7,60 @@
 <meta name="color-scheme" content="light dark">
 <style>
 /* ===========================================================================
- * This block is copy-pasted verbatim from src/http/styles.ts's TOKENS export
- * (the CSS custom properties, not the design-note comments) plus the
- * .pu-slot* rules from BASE_CSS that consume them. It is NOT generated or
- * imported — if styles.ts changes these values, update this file by hand.
+ * This reference mirrors the public theme tokens from src/http/styles.ts's
+ * TOKENS export plus the .pu-slot* rules from BASE_CSS that consume them. It
+ * is NOT generated or imported — if styles.ts changes these values, update
+ * this file by hand.
  * That is a deliberate trade: this page has no build step (it is a plain
- * static file a self-hoster can open straight from disk), so "copy, don't
- * import" is the same choice engine already made for
- * docs/branding/assets/tokens.css vs. this same TOKENS block.
+ * static file a self-hoster can open straight from disk), so the token block
+ * stays self-contained and is checked against the runtime source by tests.
  * ======================================================================== */
 :root{
-  --pu-ink-950:#0F1512; --pu-ink-900:#17201B; --pu-ink-700:#2E3B34;
-  --pu-ink-500:#5C6660; --pu-paper:#FAFAF7; --pu-paper-dim:#F0F1EC;
-  --pu-line:#E3E5DE; --pu-green-700:#0E7C4C; --pu-green-800:#0A5C3A;
-  --pu-signal:#1FC16B; --pu-green-tint:#E4F5EC; --pu-danger:#D92D20;
-  --pu-danger-800:#B8241A; --pu-danger-text:#D92D20; --pu-danger-tint:#FBEAE8;
-  --pu-green-fill:#0E7C4C; --pu-green-fill-hover:#0A5C3A;
+  --pu-ink-950:#111; --pu-ink-900:#222; --pu-ink-700:#333;
+  --pu-ink-500:#555; --pu-paper:#fff; --pu-paper-dim:#eee;
+  --pu-line:#ddd; --pu-green-700:#333; --pu-green-800:#111;
+  --pu-green-tint:#eee; --pu-danger:#B53845;
+  --pu-danger-800:#8E2934; --pu-danger-text:#A8323E; --pu-danger-tint:#FAECEE;
+  --pu-green-fill:#333; --pu-green-fill-hover:#111;
+  --pu-success-action:#176B55; --pu-success-action-hover:#0F523F;
+  --pu-success-action-text:#fff; --pu-danger-action-text:#fff;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#628F82; --pu-booking-accent-tint:#E9F4F0;
+  --pu-booking-accent-text:#176B55; --pu-booking-accent-on-fill:#fff;
+  --pu-booking-button-text:#fff;
+  --pu-booking-day-hover-bg:var(--pu-booking-accent-hover);
+  --pu-booking-day-hover-text:var(--pu-booking-accent-on-fill);
+  --pu-booking-day-selected-bg:var(--pu-booking-accent);
+  --pu-booking-day-selected-text:var(--pu-booking-accent-on-fill);
   --pu-warn:#F5A623; --pu-warn-text:#92400E; --pu-warn-tint:#FCEFD9;
-  --pu-font-display:"Schibsted Grotesk",system-ui,-apple-system,sans-serif;
   --pu-font-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --pu-font-display:var(--pu-font-ui);
   --pu-font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --pu-radius:10px; --pu-radius-lg:16px;
-  --pu-shadow-sm:0 1px 2px rgba(15,21,18,.06);
+  --pu-radius:2px; --pu-radius-lg:2px;
+  --pu-shadow-sm:none;
+  --pu-ring:0 0 0 3px rgba(51,51,51,.22);
+  --pu-code-bg:#111; --pu-code-fg:#f5f5f5; --pu-code-line:#444;
 
-  --pu-surface-canvas:var(--pu-paper);
-  --pu-surface-raised:var(--pu-paper);
-  --pu-surface-sunken:var(--pu-paper-dim);
-  --pu-surface-overlay:rgba(15,21,18,.45);
+  --pu-surface-canvas:#f5f5f5;
+  --pu-surface-raised:#fff;
+  --pu-surface-sunken:#eee;
+  --pu-surface-overlay:rgba(17,17,17,.45);
 
-  --pu-text-primary:var(--pu-ink-950);
-  --pu-text-secondary:var(--pu-ink-500);
-  --pu-text-muted:rgba(92,102,96,.72);
-  --pu-text-on-accent:#FFFFFF;
-  --pu-text-disabled:rgba(92,102,96,.45);
+  --pu-text-primary:#111;
+  --pu-text-secondary:#555;
+  --pu-text-muted:#666;
+  --pu-text-on-accent:#fff;
+  --pu-text-disabled:#777;
 
-  --pu-border-subtle:var(--pu-line);
-  --pu-border-strong:var(--pu-ink-500);
-  --pu-border-focus:var(--pu-green-700);
+  --pu-border-subtle:#ddd;
+  --pu-border-strong:#888;
+  --pu-border-focus:#333;
+  --pu-field-border:var(--pu-border-strong);
+  --pu-url-bg:#eee;
 
-  --pu-status-success:var(--pu-green-700);
-  --pu-status-success-bg:var(--pu-green-tint);
+  --pu-status-success:#0E7C4C;
+  --pu-status-success-bg:#E4F5EC;
   --pu-status-danger:var(--pu-danger-text);
   --pu-status-danger-bg:var(--pu-danger-tint);
   --pu-status-warning:var(--pu-warn-text);
@@ -54,49 +68,91 @@
   --pu-status-info:var(--pu-text-secondary);
   --pu-status-info-bg:var(--pu-surface-sunken);
 
-  --pu-slot-available-bg:var(--pu-surface-raised);
-  --pu-slot-available-border:var(--pu-border-subtle);
-  --pu-slot-available-text:var(--pu-text-primary);
-  --pu-slot-hover-bg:var(--pu-green-tint);
-  --pu-slot-hover-border:var(--pu-green-700);
-  --pu-slot-hover-text:var(--pu-text-primary);
-  --pu-slot-selected-bg:var(--pu-green-tint);
-  --pu-slot-selected-border:var(--pu-green-700);
-  --pu-slot-selected-text:var(--pu-text-primary);
+  --pu-slot-available-bg:#fff;
+  --pu-slot-available-border:var(--pu-booking-accent-border);
+  --pu-slot-available-text:#111;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint);
+  --pu-slot-hover-border:var(--pu-booking-accent);
+  --pu-slot-hover-text:#111;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint);
+  --pu-slot-selected-border:var(--pu-booking-accent);
+  --pu-slot-selected-text:#111;
   --pu-slot-held-bg:var(--pu-warn-tint);
   --pu-slot-held-border:var(--pu-warn);
   --pu-slot-held-text:var(--pu-warn-text);
-  --pu-slot-booked-bg:var(--pu-surface-sunken);
-  --pu-slot-booked-border:var(--pu-border-subtle);
-  --pu-slot-booked-text:var(--pu-text-disabled);
-  --pu-slot-past-bg:var(--pu-surface-canvas);
+  --pu-slot-booked-bg:#eee;
+  --pu-slot-booked-border:#ddd;
+  --pu-slot-booked-text:#777;
+  --pu-slot-past-bg:#f5f5f5;
   --pu-slot-past-border:transparent;
-  --pu-slot-past-text:var(--pu-text-muted);
-  --pu-slot-outside-notice-bg:var(--pu-surface-raised);
-  --pu-slot-outside-notice-border:var(--pu-border-subtle);
-  --pu-slot-outside-notice-text:var(--pu-text-muted);
+  --pu-slot-past-text:#666;
+  --pu-slot-outside-notice-bg:#fff;
+  --pu-slot-outside-notice-border:#ddd;
+  --pu-slot-outside-notice-text:#666;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme=light]){
-    --pu-paper:#0F1512; --pu-paper-dim:#17201B; --pu-line:#2E3B34;
-    --pu-ink-950:#FAFAF7; --pu-ink-500:#9AA5A0; --pu-green-700:#1FC16B;
-    --pu-green-800:#3ED486; --pu-green-tint:#153A28; --pu-danger-text:#FF6B5B;
-    --pu-danger-tint:#3A1A16; --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
-    --pu-shadow-sm:0 1px 2px rgba(0,0,0,.4);
-    --pu-surface-raised:#17201B;
-    --pu-text-muted:rgba(154,165,160,.72); --pu-text-disabled:rgba(154,165,160,.45);
+    --pu-paper:#111; --pu-paper-dim:#2a2a2a; --pu-line:#444;
+    --pu-ink-950:#f5f5f5; --pu-ink-900:#eee; --pu-ink-700:#ddd; --pu-ink-500:#bbb;
+    --pu-green-700:#f5f5f5; --pu-green-800:#fff; --pu-green-tint:#2a2a2a;
+    --pu-green-fill:#f5f5f5; --pu-green-fill-hover:#d8d8d8;
+    --pu-success-action:#77BFA6; --pu-success-action-hover:#8BD0B7;
+    --pu-success-action-text:#111;
+    --pu-booking-accent:var(--pu-success-action);
+    --pu-booking-accent-hover:var(--pu-success-action-hover);
+    --pu-booking-accent-border:#4B806E; --pu-booking-accent-tint:#183129;
+    --pu-booking-accent-text:#77BFA6; --pu-booking-accent-on-fill:#111;
+    --pu-danger:#E06C78; --pu-danger-800:#F0808A;
+    --pu-danger-text:#FF8A94; --pu-danger-tint:#3A2025;
+    --pu-danger-action-text:#111;
+    --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
+    --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+    --pu-surface-canvas:#111; --pu-surface-raised:#1c1c1c; --pu-surface-sunken:#2a2a2a;
+    --pu-text-primary:#f5f5f5; --pu-text-secondary:#bbb; --pu-text-on-accent:#111;
+    --pu-text-muted:#aaa; --pu-text-disabled:#888;
+    --pu-border-subtle:#444; --pu-border-strong:#888; --pu-border-focus:#f5f5f5;
     --pu-surface-overlay:rgba(0,0,0,.6);
+    --pu-field-border:var(--pu-border-strong); --pu-url-bg:#2a2a2a;
+    --pu-slot-available-bg:#1c1c1c; --pu-slot-available-border:var(--pu-booking-accent-border); --pu-slot-available-text:#f5f5f5;
+    --pu-slot-hover-bg:var(--pu-booking-accent-tint); --pu-slot-hover-border:var(--pu-booking-accent); --pu-slot-hover-text:#f5f5f5;
+    --pu-slot-selected-bg:var(--pu-booking-accent-tint); --pu-slot-selected-border:var(--pu-booking-accent); --pu-slot-selected-text:#f5f5f5;
+    --pu-slot-booked-bg:#2a2a2a; --pu-slot-booked-border:#444; --pu-slot-booked-text:#888;
+    --pu-slot-past-bg:#111; --pu-slot-past-text:#aaa;
+    --pu-slot-outside-notice-bg:#1c1c1c; --pu-slot-outside-notice-border:#444; --pu-slot-outside-notice-text:#aaa;
+    --pu-status-success:#1FC16B; --pu-status-success-bg:#153A28;
+    --pu-booking-button-text:#111;
   }
 }
 :root[data-theme=dark]{
-  --pu-paper:#0F1512; --pu-paper-dim:#17201B; --pu-line:#2E3B34;
-  --pu-ink-950:#FAFAF7; --pu-ink-500:#9AA5A0; --pu-green-700:#1FC16B;
-  --pu-green-800:#3ED486; --pu-green-tint:#153A28; --pu-danger-text:#FF6B5B;
-  --pu-danger-tint:#3A1A16; --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
-  --pu-shadow-sm:0 1px 2px rgba(0,0,0,.4);
-  --pu-surface-raised:#17201B;
-  --pu-text-muted:rgba(154,165,160,.72); --pu-text-disabled:rgba(154,165,160,.45);
+  --pu-paper:#111; --pu-paper-dim:#2a2a2a; --pu-line:#444;
+  --pu-ink-950:#f5f5f5; --pu-ink-900:#eee; --pu-ink-700:#ddd; --pu-ink-500:#bbb;
+  --pu-green-700:#f5f5f5; --pu-green-800:#fff; --pu-green-tint:#2a2a2a;
+  --pu-green-fill:#f5f5f5; --pu-green-fill-hover:#d8d8d8;
+  --pu-success-action:#77BFA6; --pu-success-action-hover:#8BD0B7;
+  --pu-success-action-text:#111;
+  --pu-booking-accent:var(--pu-success-action);
+  --pu-booking-accent-hover:var(--pu-success-action-hover);
+  --pu-booking-accent-border:#4B806E; --pu-booking-accent-tint:#183129;
+  --pu-booking-accent-text:#77BFA6; --pu-booking-accent-on-fill:#111;
+  --pu-danger:#E06C78; --pu-danger-800:#F0808A;
+  --pu-danger-text:#FF8A94; --pu-danger-tint:#3A2025;
+  --pu-danger-action-text:#111;
+  --pu-warn-text:#FBBF24; --pu-warn-tint:#3A2C12;
+  --pu-ring:0 0 0 3px rgba(245,245,245,.24);
+  --pu-surface-canvas:#111; --pu-surface-raised:#1c1c1c; --pu-surface-sunken:#2a2a2a;
+  --pu-text-primary:#f5f5f5; --pu-text-secondary:#bbb; --pu-text-on-accent:#111;
+  --pu-text-muted:#aaa; --pu-text-disabled:#888;
+  --pu-border-subtle:#444; --pu-border-strong:#888; --pu-border-focus:#f5f5f5;
   --pu-surface-overlay:rgba(0,0,0,.6);
+  --pu-field-border:var(--pu-border-strong); --pu-url-bg:#2a2a2a;
+  --pu-slot-available-bg:#1c1c1c; --pu-slot-available-border:var(--pu-booking-accent-border); --pu-slot-available-text:#f5f5f5;
+  --pu-slot-hover-bg:var(--pu-booking-accent-tint); --pu-slot-hover-border:var(--pu-booking-accent); --pu-slot-hover-text:#f5f5f5;
+  --pu-slot-selected-bg:var(--pu-booking-accent-tint); --pu-slot-selected-border:var(--pu-booking-accent); --pu-slot-selected-text:#f5f5f5;
+  --pu-slot-booked-bg:#2a2a2a; --pu-slot-booked-border:#444; --pu-slot-booked-text:#888;
+  --pu-slot-past-bg:#111; --pu-slot-past-text:#aaa;
+  --pu-slot-outside-notice-bg:#1c1c1c; --pu-slot-outside-notice-border:#444; --pu-slot-outside-notice-text:#aaa;
+  --pu-status-success:#1FC16B; --pu-status-success-bg:#153A28;
+  --pu-booking-button-text:#111;
 }
 
 /* Page chrome — not part of the token export, just this reference page. */
@@ -109,7 +165,7 @@ h2{font-family:var(--pu-font-display);font-size:1.125rem;margin:2.5rem 0 .25rem}
 p.lede{color:var(--pu-text-secondary);max-width:38rem;margin:0 0 1.5rem}
 p.note{color:var(--pu-text-secondary);font-size:.875rem;max-width:38rem;margin:.35rem 0 1.25rem}
 code{font-family:var(--pu-font-mono);font-size:.8125rem;background:var(--pu-surface-sunken);
-  border:1px solid var(--pu-line);border-radius:4px;padding:.05rem .35rem}
+  border:1px solid var(--pu-line);border-radius:var(--pu-radius);padding:.05rem .35rem}
 .top{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap;
   border-bottom:1px solid var(--pu-line);padding-bottom:1.25rem;margin-bottom:.5rem}
 .toggle{font:inherit;font-family:var(--pu-font-mono);font-size:.8125rem;font-weight:600;
@@ -241,9 +297,9 @@ footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--pu-line);
   <p class="note">canvas &lt; raised &lt; sunken by how far off the base page a thing sits; overlay is a scrim above everything.</p>
   <div class="swatch-grid">
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-surface-canvas)">canvas</div>
-      <div class="swatch-meta"><span class="name">--pu-surface-canvas</span><code>= --pu-paper</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-surface-canvas</span><code>light = #f5f5f5, dark = #111</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-surface-raised);border-bottom:1px solid var(--pu-line)">raised</div>
-      <div class="swatch-meta"><span class="name">--pu-surface-raised</span><code>light = --pu-paper, dark = #17201B</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-surface-raised</span><code>light = #fff, dark = #1c1c1c</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-surface-sunken)">sunken</div>
       <div class="swatch-meta"><span class="name">--pu-surface-sunken</span><code>= --pu-paper-dim</code></div></div>
   </div>
@@ -259,11 +315,11 @@ footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--pu-line);
     <div class="swatch"><div class="swatch-fill" style="color:var(--pu-text-secondary)">Aa secondary</div>
       <div class="swatch-meta"><span class="name">--pu-text-secondary</span><code>= --pu-ink-500</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="color:var(--pu-text-muted)">Aa muted</div>
-      <div class="swatch-meta"><span class="name">--pu-text-muted</span><code>rgba(ink-500, .72)</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-text-muted</span><code>light = #666, dark = #aaa</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-green-fill);color:var(--pu-text-on-accent)">Aa on-accent</div>
-      <div class="swatch-meta"><span class="name">--pu-text-on-accent</span><code>#FFFFFF</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-text-on-accent</span><code>light = #fff, dark = #111</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="color:var(--pu-text-disabled)">Aa disabled</div>
-      <div class="swatch-meta"><span class="name">--pu-text-disabled</span><code>rgba(ink-500, .45)</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-text-disabled</span><code>light = #777, dark = #888</code></div></div>
   </div>
 
   <h2>Border</h2>
@@ -271,21 +327,22 @@ footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--pu-line);
     <div class="swatch"><div class="swatch-fill" style="border:2px solid var(--pu-border-subtle);margin:1rem;height:2.5rem">subtle</div>
       <div class="swatch-meta"><span class="name">--pu-border-subtle</span><code>= --pu-line</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="border:2px solid var(--pu-border-strong);margin:1rem;height:2.5rem">strong</div>
-      <div class="swatch-meta"><span class="name">--pu-border-strong</span><code>= --pu-ink-500</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-border-strong</span><code>#888 in both themes</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="border:2px solid var(--pu-border-focus);margin:1rem;height:2.5rem">focus</div>
-      <div class="swatch-meta"><span class="name">--pu-border-focus</span><code>= --pu-green-700</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-border-focus</span><code>#333 light / #f5f5f5 dark</code></div></div>
   </div>
 
   <h2>Status</h2>
   <p class="note">
-    success is <code>--pu-green-700</code>, not a reflexive alias of
-    <code>--pu-signal</code> (see styles.ts for why). info deliberately has
+    success uses its own contrast-managed green status token rather than the
+    neutral control palette. Decorative metadata remains neutral and wordmarks
+    are monochrome. info deliberately has
     no owned hue — it reuses the neutral sunken-surface treatment
     <code>.pu-docs-callout</code> already ships.
   </p>
   <div class="swatch-grid">
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-status-success-bg);color:var(--pu-status-success)">success</div>
-      <div class="swatch-meta"><span class="name">--pu-status-success</span><code>= --pu-green-700</code></div></div>
+      <div class="swatch-meta"><span class="name">--pu-status-success</span><code>#0E7C4C light / #1FC16B dark</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-status-danger-bg);color:var(--pu-status-danger)">danger</div>
       <div class="swatch-meta"><span class="name">--pu-status-danger</span><code>= --pu-danger-text</code></div></div>
     <div class="swatch"><div class="swatch-fill" style="background:var(--pu-status-warning-bg);color:var(--pu-status-warning)">warning</div>
@@ -297,8 +354,8 @@ footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--pu-line);
   <footer>
     Punctual. This file is a plain static reference with no build
     step; it intentionally duplicates styles.ts's TOKENS block rather than
-    importing it, the same trade docs/branding/assets/tokens.css already
-    makes. Keep the three in sync by hand when a token changes.
+    importing it. Keep this reference in sync with styles.ts when a token
+    changes.
   </footer>
 </div>
 <script>

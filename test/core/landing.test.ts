@@ -23,6 +23,17 @@ describe('landingPage without a configured demo', () => {
     const html = landingPage(opts)
     expect(html).not.toContain('See a booking page')
   })
+
+  it('uses neutral adaptive browser chrome', () => {
+    const html = landingPage(opts)
+    expect(html).toContain('<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)">')
+    expect(html).toContain('<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">')
+    expect(html).not.toContain('<meta name="theme-color" content="#0E7C4C">')
+  })
+
+  it('versions the default social card URL so external preview caches can refresh', () => {
+    expect(landingPage(opts)).toContain('/og/default.png?v=3')
+  })
 })
 
 describe('landingPage with a configured demo', () => {

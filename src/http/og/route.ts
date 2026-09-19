@@ -25,7 +25,7 @@ type Env = Record<string, unknown>
 
 /** Marketing content, not booking data — an hour of staleness is fine (mirrors ADR-0006 §1's freeBusy TTL philosophy). */
 const CACHE_TTL_SECONDS = 60 * 60
-const DEFAULT_CARD_PATH = '/og/default.png'
+const DEFAULT_CARD_PATH = '/og/default.png?v=3'
 const PNG_SUFFIX = '.png'
 
 /**
@@ -76,7 +76,7 @@ export function buildOgRoutes(ports: EnginePorts): Hono<{ Bindings: Env }> {
     const faceKeys =
       `${logoKey ?? '-'}:${logoShape}:${team?.showName === false ? 'anon' : 'named'}|` +
       hosts.map((h) => `${h.user.id}:${h.user.avatarKey ?? '-'}`).join(',')
-    const cacheKey = `og:v2:${userSlug}:${eventSlug}:${await ports.crypto.hash(faceKeys)}`
+    const cacheKey = `og:v3:${userSlug}:${eventSlug}:${await ports.crypto.hash(faceKeys)}`
 
     const cached = await safeGet(ports, cacheKey)
     if (cached) return pngResponse(c, cached)
